@@ -1,0 +1,58 @@
+<Configuration>
+	<Name>ILL Strategy Agent</Name>
+	<Author>Your Library</Author>
+	<Version>2.1.0</Version>
+	<Active>true</Active>
+
+	<Description>Adds a Citation Check tab to the request form. Verifies each part of the citation against free databases (Crossref, OpenAlex, Open Library, Unpaywall). Requests from the Lending username open the eResource page (Bowdoin access, Primo checks and Fetch PDF); all others open the Borrowing page (strategy and search links).</Description>
+
+	<Forms>
+		<Form>FormRequest</Form>
+	</Forms>
+
+	<Settings>
+		<Setting name="ContactEmail" value="" type="string">
+			<Description>A staff email address, sent to Crossref, OpenAlex and Unpaywall for their faster service. Needed for the open-access check.</Description>
+		</Setting>
+		<Setting name="CatalogSearchURL" value="https://bowdoin.primo.exlibrisgroup.com/discovery/search?vid=01CBB_BOWC:BOWDOIN&amp;tab=AllLibrary&amp;lang=en&amp;query=any,contains,{q}&amp;primoQueryTemp=&amp;search_scope=DN_and_CI" type="string">
+			<Description>Your catalog search address with {q} where the search words go. Set to Bowdoin's Primo.</Description>
+		</Setting>
+		<Setting name="LinkResolverURL" value="https://bowdoin.primo.exlibrisgroup.com/discovery/openurl?institution=01CBB_BOWC&amp;vid=01CBB_BOWC:BOWDOIN" type="string">
+			<Description>Bowdoin's Primo "Find It" address (the one EBSCO uses). The eResource page's "Check Bowdoin access" button opens it with the verified citation filled in.</Description>
+		</Setting>
+		<Setting name="AlmaResolverURL" value="" type="string">
+			<Description>Optional. Bowdoin's Alma link resolver, e.g. https://XXXX.alma.exlibrisgroup.com/view/uresolver/01CBB_BOWC/openurl. Used to show Bowdoin's access automatically on the eResource page. If blank, the page tries the most likely addresses itself.</Description>
+		</Setting>
+		<Setting name="PdfSaveFolder" value="" type="string">
+			<Description>Folder where Fetch PDF saves files, named by transaction number (e.g. 123456.pdf). Blank = Documents\ILL PDFs on this PC.</Description>
+		</Setting>
+		<Setting name="AutoFetchPdf" value="true" type="boolean">
+			<Description>If true, the eResource page fetches the PDF by itself when the tab opens, whenever a DOI or free copy was found, and shows it for review at any citation confidence. If ReviewPdfBeforeSave is false, it only fetches when the confidence is High (the PDF is saved straight away). Skipped if TN.pdf is already saved.</Description>
+		</Setting>
+		<Setting name="ReviewPdfBeforeSave" value="true" type="boolean">
+			<Description>If true, fetched PDFs are held for review on the eResource page and only saved as TN.pdf when you click Save. If false, they are saved straight away.</Description>
+		</Setting>
+		<Setting name="EbscoProfile" value="ENTER_PROFILE_ID" type="string">
+			<Description>EBSCOhost API (EIT) profile, usually customerID.groupID.profileID: replace ENTER_PROFILE_ID with yours. While it still reads ENTER_PROFILE_ID (or is blank), the EBSCO route stays off. When set with the password, Fetch PDF tries EBSCO after the free copy and before the publisher, and a Test EBSCO button appears on the ribbon.</Description>
+		</Setting>
+		<Setting name="EbscoPassword" value="ENTER_PASSWORD" type="string">
+			<Description>EBSCOhost API (EIT) password for that profile: replace ENTER_PASSWORD with yours. Stored in ILLiad's addon settings, so anyone who can manage addons can read it.</Description>
+		</Setting>
+		<Setting name="AutoRun" value="true" type="boolean">
+			<Description>If true, the check runs when the request opens. If false, click Check Citation.</Description>
+		</Setting>
+		<Setting name="CopyTNOnOpen" value="true" type="boolean">
+			<Description>If true, the request's transaction number is copied to the clipboard when the Citation Check tab opens.</Description>
+		</Setting>
+		<Setting name="CitationBox" value="true" type="boolean">
+			<Description>If true, links on the Citation Check page open in the same tab, and any website you open there shows a citation box in the corner (title, authors, journal, volume, pages, DOI, TN; click a value to copy it). The box never appears on the Citation Check page itself.</Description>
+		</Setting>
+		<Setting name="EResourceUsername" value="Lending" type="string">
+			<Description>Requests with this username open the eResource page. All other requests open the Borrowing page.</Description>
+		</Setting>
+	</Settings>
+
+	<Files>
+		<File>StrategyAgent.lua</File>
+	</Files>
+</Configuration>

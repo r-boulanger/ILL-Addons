@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ILL Citation Check</title>
+<style>
+  :root{
+    --bg:#000000; --panel:#000000; --ink:#ffffff; --muted:#a3adb8; --line:#333a42;
+    --accent:#6cb4e8; --accent-ink:#000000; --soft:#161a1f;
+    --ok:#7fd69b; --ok-bg:#0f2a19; --mid:#f2c063; --mid-bg:#2e2208; --bad:#ff8a8a; --bad-bg:#331010;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,-apple-system,Arial,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .meta{color:var(--muted);font-size:12px}
+  header .spacer{flex:1}
+  button,select{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  button:disabled{opacity:.55;cursor:default}
+  a{color:var(--accent)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  main{flex:1;display:grid;grid-template-columns:minmax(220px,290px) 1fr;min-height:0}
+  aside{border-right:1px solid var(--line);background:var(--panel);overflow:auto;padding:12px 14px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 8px;font-weight:600}
+  dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px}
+  dt{color:var(--muted);white-space:nowrap}
+  dd{margin:0;word-break:break-word}
+  #results{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;max-width:900px}
+  .verdict{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+  .badge{font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;white-space:nowrap}
+  .badge.High{background:var(--ok-bg);color:var(--ok)}
+  .badge.Medium{background:var(--mid-bg);color:var(--mid)}
+  .badge.Low,.badge.None{background:var(--bad-bg);color:var(--bad)}
+  .cite{flex:1;min-width:240px}
+  .cite .ids{color:var(--muted);font-size:12.5px;margin-top:2px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{text-align:left;vertical-align:top;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+  .tbl{overflow-x:auto}
+  .st{font-size:11.5px;font-weight:600;border-radius:4px;padding:1px 6px;white-space:nowrap}
+  .st.match{background:var(--ok-bg);color:var(--ok)}
+  .st.fix{background:var(--mid-bg);color:var(--mid)}
+  .st.add{background:var(--soft);color:var(--accent)}
+  .st.none{background:var(--soft);color:var(--muted)}
+  ol.steps{margin:0;padding-left:22px}
+  ol.steps li{margin:6px 0}
+  ol.steps li small{display:block;color:var(--muted)}
+  .links{display:flex;flex-wrap:wrap;gap:8px}
+  .links a{border:1px solid var(--line);border-radius:6px;padding:5px 10px;text-decoration:none;color:var(--accent);background:var(--panel)}
+  .oa{border-left:4px solid var(--ok)}
+  .cand{padding:8px 0;border-top:1px solid var(--line);display:flex;gap:10px}
+  .cand:first-of-type{border-top:0}
+  .cand .sc{font-variant-numeric:tabular-nums;color:var(--muted);min-width:44px;font-size:12.5px}
+  .cand .src{color:var(--muted);font-size:12px}
+  .cand button{padding:2px 8px;font-size:12px;align-self:flex-start}
+  .progress{color:var(--muted);font-size:13px}
+  .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--muted);border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .banner{border-radius:8px;padding:10px 14px;max-width:900px;background:var(--mid-bg);color:var(--mid)}
+  .banner.err{background:var(--bad-bg);color:var(--bad)}
+  form.research{display:flex;gap:8px;flex-wrap:wrap}
+  form.research input{flex:1;min-width:200px;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink)}
+  td.conf{white-space:nowrap}
+  .review-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pdfframe{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#525659}
+  .pdfpages{height:62vh;min-height:420px;overflow:auto;padding:14px;background:#525659;text-align:center}
+  .pdfpages canvas{display:block;margin:0 auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.45)}
+  .pdfpage-label{color:#d9dde2;font-size:11px;margin:6px 0 14px}
+  .pdfframe iframe{display:block;width:100%;height:62vh;min-height:420px;border:0;background:#525659}
+  .fp-check{margin:0 0 10px}
+  .fp-row{display:flex;gap:8px;align-items:baseline;padding:2px 0;font-size:13px}
+  .fp-row b{min-width:58px;font-weight:600}
+  .fp-mark{width:16px;text-align:center;font-weight:700;flex:none}
+  .fp-mark.ok{color:var(--ok)} .fp-mark.mid{color:var(--mid)} .fp-mark.bad{color:var(--bad)} .fp-mark.na{color:var(--muted)}
+  .review-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+  .acc{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .acc li{display:flex;gap:8px;align-items:baseline}
+  .acc li.off{color:var(--muted)}
+  .acc .mark{width:1.2em;flex:none;font-weight:700}
+  .acc li:not(.off) .mark{color:var(--ok)}
+  .acc li.off .mark{color:var(--bad)}
+  .pct{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+  .holdings{display:flex;flex-wrap:wrap;gap:8px}
+  .holdings a{border:1px solid var(--line);border-radius:6px;padding:7px 12px;text-decoration:none;color:var(--accent)}
+  .holdings a.main{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  .idlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .idlist button{font-family:Consolas,ui-monospace,monospace;font-size:12.5px;padding:3px 8px}
+  .modes{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .modes button{border:0;border-radius:0;background:var(--panel);color:var(--muted);padding:6px 14px}
+  .modes button+button{border-left:1px solid var(--line)}
+  .modes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+  .modetag{font-size:11px;color:var(--muted)}
+  details summary{cursor:pointer;color:var(--muted);font-size:13px}
+  @media (max-width:720px){main{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);max-height:35vh}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ILL Citation Check</h1>
+  <div class="modes" role="group" aria-label="Mode">
+    <button type="button" id="mode-borrowing" data-mode="borrowing" aria-pressed="true">Borrowing</button>
+    <button type="button" id="mode-eresource" data-mode="eresource" aria-pressed="false">eResource</button>
+  </div>
+  <span class="modetag" id="modetag"></span>
+  <span class="meta" id="meta"></span>
+  <span class="spacer"></span>
+  <select id="sample" hidden aria-label="Sample request"></select>
+  <button id="copy" type="button" disabled>Copy summary</button>
+  <button id="run" class="primary" type="button">Check citation</button>
+</header>
+<main>
+  <aside>
+    <h2>Request as submitted</h2>
+    <dl id="fields"></dl>
+  </aside>
+  <section id="results" aria-live="polite"></section>
+</main>
+
+<script>
+/* =================================================================
+   1. YOUR LIBRARY'S RULES  — edit these to match your workflow
+   ================================================================= */
+const RULES = {
+  primaryNetwork:  "OCLC WorldShare ILL",
+  fastNetwork:     "RapidILL",                      // "" if you don't use one
+  articleSupplier: "Get It Now or Reprints Desk",   // "" if you don't use one
+  purchaseProgram: "purchase-on-demand",            // "" if you don't buy books for ILL
+  purchaseIfPublishedWithinYears: 3,   // suggest buying books this new
+  recentArticleYears: 2,               // articles this new: suggest the commercial supplier early
+  urgentDays: 7,                       // "Not wanted after" within this many days = urgent
+  publicDomainBefore: 1930             // older items: suggest HathiTrust / Internet Archive
+};
+
+/* =================================================================
+   2. Request data (passed in by StrategyAgent.lua after the "#")
+   ================================================================= */
+const P = new URLSearchParams(typeof location !== "undefined" ? location.hash.slice(1) : "");
+// Bowdoin defaults, used when the addon settings are left blank
+const DEFAULT_CATALOG  = "https://bowdoin.primo.exlibrisgroup.com/discovery/search?vid=01CBB_BOWC:BOWDOIN&tab=AllLibrary&lang=en&query=any,contains,{q}&primoQueryTemp=&search_scope=DN_and_CI";
+const DEFAULT_RESOLVER = "https://bowdoin.primo.exlibrisgroup.com/discovery/openurl?institution=01CBB_BOWC&vid=01CBB_BOWC:BOWDOIN";   // Primo "Find It" page (same format EBSCO uses)
+const cfg = {
+  email:   P.get("email") || "",
+  catalog: P.get("catalog") || DEFAULT_CATALOG,       // e.g. https://yourlib.primo.exlibrisgroup.com/...query=any,contains,{q}
+  auto:    P.get("auto") !== "false",
+  resolver:P.get("resolver") || DEFAULT_RESOLVER,
+  alma:    P.get("alma") || "",            // Alma resolver for the automatic access check (optional)       // your link resolver (OpenURL) base address
+  autoPdf: P.get("autopdf") !== "false",  // fetch the PDF automatically when the tab opens
+  eds:     P.get("eds") === "true",      // EBSCO (EDS API) route is set up in the addon settings
+  review:  P.get("review") !== "false",   // fetched PDFs are held for review (any confidence auto-fetches); if off, High confidence only
+  mode:    P.get("mode") || ""             // "borrowing" or "eresource", chosen by StrategyAgent.lua
+};
+
+/* Fallback mode detection, used only when the page is opened outside ILLiad
+   (StrategyAgent.lua normally decides). Same rule as the Lua script:
+   username "Lending" = eResource, any other username = borrowing. */
+const ERESOURCE_USERNAME = "Lending";
+function detectMode(r){
+  return String(r.Username || "").trim().toLowerCase() === ERESOURCE_USERNAME.toLowerCase() ? "eresource" : "borrowing";
+}
+
+const LABELS = {
+  TransactionNumber:"TN", Username:"Username", ProcessType:"Process type", RequestType:"Request type", DocumentType:"Document type", TransactionStatus:"Status",
+  PhotoArticleTitle:"Article/chapter title", PhotoArticleAuthor:"Article/chapter author",
+  PhotoJournalTitle:"Journal/book title", PhotoJournalVolume:"Volume", PhotoJournalIssue:"Issue",
+  PhotoJournalMonth:"Month", PhotoJournalYear:"Year", PhotoJournalInclusivePages:"Pages",
+  PhotoItemAuthor:"Book author", PhotoItemEdition:"Edition", PhotoItemPlace:"Place", PhotoItemPublisher:"Publisher",
+  LoanTitle:"Title", LoanAuthor:"Author", LoanPublisher:"Publisher", LoanPlace:"Place", LoanDate:"Date", LoanEdition:"Edition",
+  ISSN:"ISSN/ISBN", ESPNumber:"OCLC number", DOI:"DOI", CallNumber:"Call number",
+  CitedIn:"Cited in", CitedTitle:"Cited title", CitedDate:"Cited date", CitedVolume:"Cited volume", CitedPages:"Cited pages",
+  SpecIns:"Patron notes", AcceptNonEnglish:"Accept non-English", AcceptAlternateEdition:"Accept other edition",
+  NotWantedAfter:"Not wanted after", LendingString:"Lending string"
+};
+
+const SAMPLES = {
+  "Article with errors": {
+    TransactionNumber:"TEST-1", Username:"jsmith", ProcessType:"Borrowing", RequestType:"Article", DocumentType:"Article",
+    PhotoArticleTitle:"Sleepy teens: social media use in adolescence and poor sleep quality, anxiety, depression",
+    PhotoArticleAuthor:"Woods, H.", PhotoJournalTitle:"Journal of Adolesence",
+    PhotoJournalVolume:"51", PhotoJournalYear:"2017", PhotoJournalInclusivePages:"41-9", CitedIn:"Google Scholar"
+  },
+  "Book loan": {
+    TransactionNumber:"TEST-2", Username:"akhan", ProcessType:"Borrowing", RequestType:"Loan",
+    LoanTitle:"The structure of scientific revolution", LoanAuthor:"Kuhn, Thomas",
+    LoanPublisher:"University of Chicago Press", LoanPlace:"Chicago", LoanDate:"1962", AcceptAlternateEdition:"Yes"
+  },
+  "Book chapter": {
+    TransactionNumber:"TEST-3", Username:"mlopez", ProcessType:"Borrowing", RequestType:"Article", DocumentType:"Book Chapter",
+    PhotoArticleTitle:"Thick description: toward an interpretive theory of culture", PhotoArticleAuthor:"Geertz",
+    PhotoJournalTitle:"The interpretation of cultures", PhotoJournalYear:"1973", PhotoJournalInclusivePages:"3-30"
+  },
+  "eResource request (article)": {
+    TransactionNumber:"TEST-4", Username:"Lending", ProcessType:"Lending", RequestType:"Article", DocumentType:"Article",
+    PhotoArticleTitle:"Sleepy teens social media use in adolescence poor sleep quality", PhotoArticleAuthor:"Woods",
+    PhotoJournalTitle:"J Adolesc", PhotoJournalVolume:"51", PhotoJournalYear:"2016", PhotoJournalInclusivePages:"41-49", ISSN:"0140-1971"
+  },
+  "eResource request (Critical Arts)": {
+    TransactionNumber:"TEST-6", Username:"Lending", ProcessType:"Lending", RequestType:"Article", DocumentType:"Article",
+    PhotoArticleTitle:"Unlocking the Perfect Beat: Reflections on Musical Hybridisation in the Work of Lander Gyselinck",
+    PhotoArticleAuthor:"Gyselinck, Lander", PhotoJournalTitle:"Critical Arts: A South-North Journal of Cultural & Media Studies",
+    PhotoJournalVolume:"39", PhotoJournalIssue:"3", PhotoJournalYear:"2025", PhotoJournalInclusivePages:"164-181", ISSN:"0256-0046",
+    DOI:"10.1080/02560046.2024.2391344"
+  },
+  "eResource request (Sound Alliances)": {
+    TransactionNumber:"TEST-7", Username:"Lending", ProcessType:"Lending", RequestType:"Loan", DocumentType:"Book",
+    LoanTitle:"Sound alliances : indigenous peoples, cultural politics, and popular music in the Pacific",
+    LoanAuthor:"Hayward, P.", LoanPublisher:"Bloomsbury Academic", LoanDate:"2020", LoanEdition:"1st ed.",
+    DOI:"10.5040/9781474289887"
+  },
+  "eResource request (ebook)": {
+    TransactionNumber:"TEST-5", Username:"Lending", ProcessType:"Lending", RequestType:"Loan", DocumentType:"eBook",
+    LoanTitle:"Braiding sweetgrass", LoanAuthor:"Kimmerer, Robin Wall", LoanPublisher:"Milkweed Editions", LoanDate:"2013"
+  }
+};
+
+/* =================================================================
+   3. Text helpers and scoring
+   ================================================================= */
+const STOP = new Set("a an the of and in on for to with from by at as its is are or & de la le el der die das und".split(" "));
+function norm(s){
+  return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase()
+    .replace(/<[^>]+>/g," ").replace(/[^a-z0-9]+/g," ").trim();
+}
+function tokens(s, keepStop){ return norm(s).split(" ").filter(t => t && (keepStop || !STOP.has(t))); }
+function lev(a,b){
+  if (a === b) return 0;
+  const m = a.length, n = b.length; if (!m || !n) return m || n;
+  let prev = Array.from({length:n+1},(_,j)=>j);
+  for (let i=1;i<=m;i++){
+    const cur=[i];
+    for (let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur;
+  }
+  return prev[n];
+}
+// Do two words match? Allows typos, and abbreviations when abbrev=true ("J Adolesc")
+function wordMatch(a, b, abbrev){
+  if (a === b) return true;
+  if (abbrev && a.length >= 1 && b.startsWith(a)) return true;
+  const L = Math.max(a.length, b.length);
+  if (L >= 8) return lev(a,b) <= 2;
+  if (L >= 5) return lev(a,b) <= 1;
+  return false;
+}
+// Similarity 0..1 between the patron's text (a) and a database's text (b)
+function similarity(a, b, abbrev){
+  const A = tokens(a), B = tokens(b);
+  if (!A.length || !B.length) return 0;
+  const used = new Set(); let hit = 0;
+  for (const t of A){
+    const j = B.findIndex((u,k) => !used.has(k) && wordMatch(t,u,abbrev));
+    if (j >= 0){ used.add(j); hit++; }
+  }
+  const dice = 2*hit/(A.length+B.length);
+  const containment = A.length >= 3 ? hit/A.length : 0;   // patron truncated the title
+  return Math.max(dice, 0.92*containment);
+}
+function surname(s){
+  s = String(s||"").trim(); if (!s) return "";
+  if (s.includes(",")) return norm(s.split(",")[0]).split(" ").pop();
+  const parts = norm(s).split(" ").filter(p => p.length > 1);
+  return parts.length ? parts[parts.length-1] : norm(s);
+}
+function authorMatch(reqAuthor, list){
+  const sn = surname(reqAuthor); if (!sn || !list || !list.length) return null;
+  return list.some(a => tokens(a,true).some(t => wordMatch(sn,t,false))) ? 1 : 0;
+}
+function yearOf(s){ const m = String(s||"").match(/\b(1[5-9]\d\d|20\d\d)\b/); return m ? +m[1] : null; }
+function yearScore(req, got){
+  if (!req || !got) return null;
+  const d = Math.abs(req-got); return d === 0 ? 1 : d === 1 ? 0.6 : d === 2 ? 0.3 : 0;
+}
+// "41-9" -> {start:41,end:49}
+function pageRange(s){
+  const m = String(s||"").match(/(\d+)\s*[-–—]+\s*(\d+)/);
+  if (!m){ const one = String(s||"").match(/\d+/); return one ? {start:+one[0], end:null} : null; }
+  let a = m[1], b = m[2];
+  if (+b < +a && b.length < a.length) b = a.slice(0, a.length-b.length) + b;
+  return { start:+a, end:+b };
+}
+function samePages(a,b){ const x = pageRange(a), y = pageRange(b); if (!x || !y) return null; return x.start === y.start ? 1 : 0; }
+
+/* Identifiers */
+function findDOI(r){
+  const all = [r.DOI, r.SpecIns, r.CitedIn, r.PhotoArticleTitle, r.ISSN].filter(Boolean).join(" ");
+  const m = all.match(/10\.\d{4,9}\/[^\s"<>]+/); return m ? m[0].replace(/[.,;)\]]+$/,"") : "";
+}
+function isbnValid(s){
+  if (s.length === 10){ let t=0; for (let i=0;i<10;i++){ const c = s[i]==="X"?10:+s[i]; if (isNaN(c)) return false; t += c*(10-i); } return t%11 === 0; }
+  if (s.length === 13){ let t=0; for (let i=0;i<13;i++){ const c=+s[i]; if (isNaN(c)) return false; t += c*(i%2?3:1); } return t%10 === 0; }
+  return false;
+}
+function findISBNs(r){
+  const out = []; const txt = [r.ISSN, r.SpecIns, r.DOI].filter(Boolean).join(" ").toUpperCase();
+  for (const m of txt.matchAll(/(?:97[89][-\s]?)?(?:\d[-\s]?){9}[\dX]/g)){
+    const c = m[0].replace(/[-\s]/g,""); if ((c.length === 10 || c.length === 13) && isbnValid(c) && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+function findISSN(r){
+  const m = String(r.ISSN||"").toUpperCase().match(/\b(\d{4})-?(\d{3}[\dX])\b/);
+  return m && !findISBNs(r).length ? m[1]+"-"+m[2] : "";
+}
+
+/* What kind of request is this? */
+function requestKind(r){
+  const dt = norm(r.DocumentType), rt = norm(r.RequestType);
+  if (dt.includes("chapter") || (r.PhotoItemAuthor && r.PhotoArticleTitle)) return "chapter";
+  if (rt === "loan" || (!r.PhotoArticleTitle && r.LoanTitle)) return "book";
+  return "article";
+}
+
+/* Normalized view of the request */
+function reqView(r){
+  const kind = requestKind(r);
+  if (kind === "book") return { kind, title:r.LoanTitle, author:r.LoanAuthor, year:yearOf(r.LoanDate), publisher:r.LoanPublisher, edition:r.LoanEdition };
+  return { kind, title:r.PhotoArticleTitle, author:r.PhotoArticleAuthor, container:r.PhotoJournalTitle,
+           volume:r.PhotoJournalVolume, issue:r.PhotoJournalIssue, year:yearOf(r.PhotoJournalYear), pages:r.PhotoJournalInclusivePages,
+           bookAuthor:r.PhotoItemAuthor, publisher:r.PhotoItemPublisher };
+}
+
+/* Score a candidate record 0..100 against the request */
+// Main title = the part before a colon, e.g. "Sound alliances : indigenous peoples…" -> "Sound alliances"
+const mainTitleOf = t => String(t || "").split(/\s[:=]\s?|:\s/)[0];
+function bookTitleSimilarity(a, c){
+  return Math.max(similarity(a, c), 0.9 * similarity(mainTitleOf(a), mainTitleOf(c)));
+}
+function scoreCandidate(q, c){
+  const parts = [];
+  const add = (w, s) => { parts.push([w, s === null || s === undefined ? 0.5 : s]); };
+  if (q.kind === "book"){
+    add(55, q.title ? bookTitleSimilarity(q.title, [c.title, c.subtitle].filter(Boolean).join(": ")) : null);
+    if (q.author) add(25, authorMatch(q.author, c.authors));
+    if (q.year) add(10, c.years && c.years.includes(q.year) ? 1 : (c.year && q.year > c.year ? 0.6 : yearScore(q.year, c.year)));
+    if (q.publisher) add(10, c.publisher ? similarity(q.publisher, c.publisher, true) : null);
+  } else {
+    add(50, q.title ? similarity(q.title, [c.title, c.subtitle].filter(Boolean).join(" ")) : null);
+    if (q.author) add(15, authorMatch(q.author, c.authors));
+    if (q.year) add(10, yearScore(q.year, c.year));
+    if (q.container) add(15, c.container ? similarity(q.container, c.container, true) : null);
+    if (q.volume) add(5, c.volume ? (String(c.volume).trim() === String(q.volume).trim() ? 1 : 0) : null);
+    if (q.pages) add(5, samePages(q.pages, c.pages));
+  }
+  const W = parts.reduce((t,p)=>t+p[0],0);
+  return Math.round(100 * parts.reduce((t,p)=>t+p[0]*p[1],0) / W);
+}
+function confidenceOf(score, byId){
+  if (byId) return "High";
+  return score >= 80 ? "High" : score >= 60 ? "Medium" : score >= 40 ? "Low" : "None";
+}
+
+/* =================================================================
+   4. Free bibliographic sources
+   ================================================================= */
+const mailto = () => cfg.email ? "mailto=" + encodeURIComponent(cfg.email) : "";
+async function getJSON(url){
+  const r = await fetch(url);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("HTTP " + r.status + " from " + new URL(url).host);
+  return r.json();
+}
+function fromCrossref(w){
+  return {
+    source:"Crossref", doi:w.DOI, type:w.type, title:(w.title||[])[0]||"", subtitle:(w.subtitle||[])[0]||"",
+    authors:((w.author && w.author.length) ? w.author : (w.editor || [])).map(a => [a.family,a.given].filter(Boolean).join(", ") || a.name || ""),
+    editors:!(w.author && w.author.length) && (w.editor || []).length > 0,
+    container:(w["container-title"]||[])[0]||"", volume:w.volume||"", issue:w.issue||"", pages:w.page||"",
+    year:(w.issued?.["date-parts"]?.[0]||[])[0]||null, publisher:w.publisher||"",
+    years:[...new Set(["issued","published-print","published-online","published"].map(k => (w[k]?.["date-parts"]?.[0]||[])[0]).filter(Boolean))].sort(),
+    issn:w.ISSN||[], isbn:w.ISBN||[], language:w.language||""
+  };
+}
+function fromOpenAlex(w){
+  const src = w.primary_location?.source || {};
+  return {
+    source:"OpenAlex", doi:(w.doi||"").replace(/^https?:\/\/doi\.org\//,""), type:w.type, title:w.title||"", subtitle:"",
+    authors:(w.authorships||[]).map(a => a.author?.display_name).filter(Boolean),
+    container:src.display_name||"", volume:w.biblio?.volume||"", issue:w.biblio?.issue||"",
+    pages:[w.biblio?.first_page,w.biblio?.last_page].filter(Boolean).join("-"),
+    year:w.publication_year||null, years:w.publication_year ? [w.publication_year] : [],
+    publisher:src.host_organization_name || (/book/i.test(w.type||"") ? src.display_name || "" : ""), issn:src.issn||[], isbn:[],
+    language:w.language||"", oaUrl:w.open_access?.oa_url||"", link:w.id
+  };
+}
+function fromOpenLibrary(b){
+  return {
+    source:"Open Library", title:b.title||"", subtitle:b.subtitle||"", authors:b.author_name||[],
+    year:b.first_publish_year||null, years:(b.publish_year||[]).slice().sort(), publisher:(b.publisher||[]).slice(0,3).join("; "),
+    isbn:(b.isbn||[]).slice(0,12), oclc:(b.oclc||[]).slice(0,5), lccn:(b.lccn||[]).slice(0,2),
+    editions:b.edition_count||null, language:(b.language||[]).join(", "), link:"https://openlibrary.org"+b.key
+  };
+}
+const SOURCES = {
+  crossrefDOI: async doi => { const d = await getJSON("https://api.crossref.org/works/"+encodeURIComponent(doi)+"?"+mailto()); return d ? [fromCrossref(d.message)] : []; },
+  crossrefSearch: async (q, author) => {
+    let u = "https://api.crossref.org/works?rows=8&query.bibliographic="+encodeURIComponent(q);
+    if (author) u += "&query.author="+encodeURIComponent(author);
+    const d = await getJSON(u+"&"+mailto()); return (d?.message?.items||[]).map(fromCrossref);
+  },
+  openalexDOI: async doi => { const d = await getJSON("https://api.openalex.org/works/doi:"+encodeURIComponent(doi)+"?"+mailto()); return d ? [fromOpenAlex(d)] : []; },
+  openalexSearch: async q => { const d = await getJSON("https://api.openalex.org/works?per-page=8&search="+encodeURIComponent(q)+"&"+mailto()); return (d?.results||[]).map(fromOpenAlex); },
+  books: async ({title, author, isbn, q}) => {
+    const p = [];
+    if (isbn) p.push("isbn="+encodeURIComponent(isbn));
+    else { if (title) p.push("title="+encodeURIComponent(title)); if (author) p.push("author="+encodeURIComponent(surname(author))); if (q) p.push("q="+encodeURIComponent(q)); }
+    const f = "key,title,subtitle,author_name,first_publish_year,publish_year,publisher,isbn,edition_count,language,oclc,lccn";
+    const d = await getJSON("https://openlibrary.org/search.json?limit=8&fields="+f+"&"+p.join("&"));
+    return (d?.docs||[]).map(fromOpenLibrary);
+  },
+  unpaywall: async doi => {
+    if (!cfg.email) return null;
+    const d = await getJSON("https://api.unpaywall.org/v2/"+encodeURIComponent(doi)+"?email="+encodeURIComponent(cfg.email));
+    if (!d || !d.is_oa) return null;
+    const b = d.best_oa_location || {};
+    return { url:b.url_for_pdf || b.url, version:b.version, host:b.host_type, license:b.license };
+  }
+};
+
+/* Run the right searches for this request. `log` reports progress. */
+async function lookUp(r, log, override){
+  const q = reqView(r);
+  const doi = findDOI(r), isbns = findISBNs(r);
+  const jobs = [];
+  const run = (label, fn) => jobs.push(fn().then(x => { log(label, true); return x || []; }, e => { log(label + " (failed: " + e.message + ")", false); return []; }));
+
+  if (override){
+    if (q.kind === "book") run("Open Library: " + override, () => SOURCES.books({ q:override }));
+    else { run("Crossref: " + override, () => SOURCES.crossrefSearch(override)); run("OpenAlex: " + override, () => SOURCES.openalexSearch(override)); }
+  } else if (q.kind === "book"){
+    if (doi){ run("Crossref DOI " + doi, () => SOURCES.crossrefDOI(doi)); run("OpenAlex DOI", () => SOURCES.openalexDOI(doi)); }
+    if (isbns.length) run("Open Library by ISBN " + isbns[0], () => SOURCES.books({ isbn:isbns[0] }));
+    if (q.title) run("Open Library by title/author", () => SOURCES.books({ title:q.title, author:q.author }));
+    if (q.title && !isbns.length) run("Open Library keywords", () => SOURCES.books({ q:[q.title, surname(q.author)].join(" ") }));
+  } else {
+    if (doi){ run("Crossref DOI " + doi, () => SOURCES.crossrefDOI(doi)); run("OpenAlex DOI", () => SOURCES.openalexDOI(doi)); }
+    const bib = [q.title, surname(q.author), q.container, q.year].filter(Boolean).join(" ");
+    if (q.title){
+      run("Crossref citation search", () => SOURCES.crossrefSearch(bib));
+      run("OpenAlex title search", () => SOURCES.openalexSearch([q.title, surname(q.author)].filter(Boolean).join(" ")));
+    }
+    if (q.kind === "chapter" && q.container) run("Open Library: host book", () => SOURCES.books({ title:q.container, author:q.bookAuthor || q.author }));
+  }
+
+  const lists = await Promise.all(jobs);
+  let all = lists.flat();
+  const idDOI = doi && !override ? doi.toLowerCase() : "";
+  const scored = all.map(c => ({ ...c, score:scoreCandidate(q, c), byId:(idDOI && (c.doi||"").toLowerCase() === idDOI) || (isbns.length && (c.isbn||[]).some(i => isbns.includes(i))) }));
+  // The host book of a chapter is not a candidate for the chapter itself
+  const main = q.kind === "chapter" ? scored.filter(c => c.source !== "Open Library") : scored;
+  const host = q.kind === "chapter" ? scored.filter(c => c.source === "Open Library").map(c => ({...c, score:Math.round(100*similarity(q.container, c.title))})).sort((a,b)=>b.score-a.score)[0] : null;
+  const merged = mergeCandidates(main);
+  merged.sort((a,b) => (b.byId - a.byId) || (b.score - a.score));
+  const top = merged[0] || null;
+  const confidence = top ? confidenceOf(top.score, top.byId) : "None";
+  const best = confidence === "None" ? null : top;   // nothing plausible: don't pretend
+  const trusted = confidence === "High" || confidence === "Medium";
+  let oa = null;
+  if (best && best.doi && trusted){
+    try { oa = await SOURCES.unpaywall(best.doi); } catch(e){ log("Unpaywall (failed)", false); }
+    if (!oa && best.oaUrl) oa = { url:best.oaUrl, host:"OpenAlex" };
+    if (cfg.email) log("Unpaywall open-access check", true);
+  }
+  return { q, doi, isbns, issn:findISSN(r), candidates:merged, best, oa, confidence,
+           host: host && host.score >= 60 ? host : null };
+}
+
+/* Crossref and OpenAlex often return the same article: combine by DOI */
+function mergeCandidates(list){
+  const byKey = new Map(), out = [];
+  for (const c of list){
+    const key = c.doi ? "doi:"+c.doi.toLowerCase() : c.link || (c.source + norm(c.title) + c.year);
+    if (!byKey.has(key)){ byKey.set(key, {...c, sources:[c.source]}); out.push(byKey.get(key)); continue; }
+    const m = byKey.get(key);
+    if (!m.sources.includes(c.source)) m.sources.push(c.source);
+    for (const k of ["volume","issue","pages","publisher","language","oaUrl","container"]) if (!m[k] && c[k]) m[k] = c[k];
+    if ((!m.issn || !m.issn.length) && c.issn) m.issn = c.issn;
+    m.score = Math.max(m.score, c.score); m.byId = m.byId || c.byId;
+  }
+  return out;
+}
+
+/* =================================================================
+   5. Compare the request with the best match, field by field
+   ================================================================= */
+/* Each row gets a score from 0 to 1 for how well the request's value matches
+   the verified record, using the same rules as the overall match score:
+   High = 0.85 or more, Medium = 0.6 or more, Low = below 0.6. */
+function fieldConfidence(score){ return score >= 0.85 ? "High" : score >= 0.6 ? "Medium" : "Low"; }
+function compareFields(r, res){
+  const q = res.q, b = res.best; if (!b) return [];
+  const rows = [];
+  const row = (label, field, req, got, scoreFn) => {
+    got = got === undefined || got === null ? "" : String(got);
+    req = req || "";
+    if (!got && !req) return;
+    if (got && !req){ rows.push({ label, field, req, got, status:"add", score:null, conf:"" }); return; }
+    if (!got && req){ rows.push({ label, field, req, got, status:"none", score:null, conf:"" }); return; }
+    let score = Number(scoreFn(req, got));
+    if (!isFinite(score)) score = 0;
+    score = Math.max(0, Math.min(1, score));
+    rows.push({ label, field, req, got, score, conf:fieldConfidence(score), status: score >= 0.85 ? "match" : "fix" });
+  };
+  const exact = (a,c) => norm(a) === norm(c) ? 1 : 0;
+  // Text that matches only after allowing typos or abbreviations tops out at 95%,
+  // so an exact match (100%) can be told apart from a close one.
+  const capInexact = (a,c,v) => norm(a) === norm(c) ? 1 : Math.min(v, 0.95);
+  const titleScore = (a,c) => capInexact(a, c, 0.6 * similarity(a,c) + 0.4 * similarity(c,a));
+  // Journal / book titles: also compare the main titles before any colon,
+  // so "Critical Arts: A South-North Journal…" matches "Critical Arts".
+  const mainTitle = t => String(t || "").split(/\s[:=]\s?|:\s/)[0];
+  const containerScore = (a,c) => {
+    const pairs = [[a,c],[mainTitle(a),c],[a,mainTitle(c)],[mainTitle(a),mainTitle(c)]];
+    let best = 0;
+    for (const [x,y] of pairs) if (x && y) best = Math.max(best, similarity(x, y, true) * (x === a && y === c ? 1 : 0.95));
+    return capInexact(a, c, best);
+  };
+  const authorScore = list => a => authorMatch(a, list) === 1 ? 1 : 0;
+  const fullTitle = [b.title, b.subtitle].filter(Boolean).join(": ");
+  if (q.kind === "book"){
+    row("Title", "LoanTitle", r.LoanTitle, fullTitle, (a,c) => capInexact(a, c, Math.max(titleScore(a,c), 0.9 * titleScore(mainTitleOf(a), mainTitleOf(c)))));
+    row(b.editors ? "Author / editor" : "Author", "LoanAuthor", r.LoanAuthor, (b.authors||[]).slice(0,3).join("; ") + (b.editors ? " (ed.)" : ""), authorScore(b.authors));
+    const yrs = (b.years && b.years.length ? b.years : [b.year]).filter(Boolean);
+    // A later year than the record usually means a reprint, new edition or ebook release.
+    row("Date", "LoanDate", r.LoanDate,
+        yrs.includes(q.year) ? String(q.year) : yrs.length ? "Record: " + yrs.join(", ") + (q.year && q.year > Math.max(...yrs) ? " (later year may be a reprint or ebook edition)" : "") : "",
+        a => { const y = yearOf(a); if (yrs.includes(y)) return 1; const near = yearScore(y, b.year); if (near) return near; return y && b.year && y > b.year ? 0.6 : 0; });
+    // Publisher names: one containing the other ("Bloomsbury Academic" / "Bloomsbury Academic eBooks") counts as a strong match
+    const contained = (a,c) => { const A = tokens(a), C = tokens(c); const [sh, lo] = A.length <= C.length ? [A, C] : [C, A]; return sh.length >= 1 && sh.every(t => lo.some(u => wordMatch(t, u, true))); };
+    row("Publisher", "LoanPublisher", r.LoanPublisher, b.publisher, (a,c) => capInexact(a, c, contained(a,c) ? 0.9 : similarity(a,c,true)));
+    row("ISBN", "ISSN", r.ISSN, (b.isbn||[]).slice(0,3).join(", "), a => findISBNs({ISSN:a}).some(i => (b.isbn||[]).includes(i)) ? 1 : 0);
+    row("OCLC number", "ESPNumber", r.ESPNumber, (b.oclc||[]).slice(0,3).join(", "), a => (b.oclc||[]).includes(String(a).replace(/\D/g,"")) ? 1 : 0);
+    row("DOI", "DOI", r.DOI, b.doi, (a,c) => a.toLowerCase().includes(String(c).toLowerCase()) ? 1 : 0);
+  } else {
+    row(q.kind === "chapter" ? "Chapter title" : "Article title", "PhotoArticleTitle", r.PhotoArticleTitle, fullTitle, titleScore);
+    row("Author", "PhotoArticleAuthor", r.PhotoArticleAuthor, (b.authors||[]).slice(0,3).join("; ") + ((b.authors||[]).length > 3 ? " et al." : ""), authorScore(b.authors));
+    row(q.kind === "chapter" ? "Book title" : "Journal", "PhotoJournalTitle", r.PhotoJournalTitle, b.container, containerScore);
+    row("Volume", "PhotoJournalVolume", r.PhotoJournalVolume, b.volume, exact);
+    row("Issue", "PhotoJournalIssue", r.PhotoJournalIssue, b.issue, exact);
+    row("Year", "PhotoJournalYear", r.PhotoJournalYear, b.year, (a,c) => yearScore(yearOf(a), +c) ?? 0);
+    const pr = pageRange(b.pages);
+    row("Pages", "PhotoJournalInclusivePages", r.PhotoJournalInclusivePages, b.pages, a => {
+      const x = pageRange(a); if (!x || !pr || x.start !== pr.start) return 0;
+      return (!x.end || !pr.end || x.end === pr.end) ? 1 : 0.7;      // right start page, wrong end page
+    });
+    const issns = [].concat(b.issn||[]);
+    if (q.kind === "article") row("ISSN", "ISSN", r.ISSN, issns.join(", "), a => issns.map(x => x.replace("-","")).includes(String(a).toUpperCase().replace(/[^0-9X]/g,"")) ? 1 : 0);
+    if (q.kind === "chapter" && res.host) row("Book ISBN", "ISSN", r.ISSN, (res.host.isbn||[]).slice(0,3).join(", "), a => findISBNs({ISSN:a}).some(i => (res.host.isbn||[]).includes(i)) ? 1 : 0);
+    row("DOI", "DOI", r.DOI, b.doi, (a,c) => a.toLowerCase().includes(c.toLowerCase()) ? 1 : 0);
+  }
+  return rows;
+}
+
+/* =================================================================
+   6. Build the strategy  — edit the wording or order freely
+   ================================================================= */
+function buildStrategy(r, res, rows){
+  const steps = [];   // each: { text, why }
+  const q = res.q, b = res.best, conf = res.confidence;
+  const fixes = rows.filter(x => x.status === "fix");
+  const adds  = rows.filter(x => x.status === "add" && ["DOI","ISSN","ISBN","OCLC number","Book ISBN"].includes(x.label));
+  const year = (b && b.year) || q.year;
+  const age = year ? new Date().getFullYear() - year : null;
+  const daysLeft = r.NotWantedAfter && !isNaN(Date.parse(r.NotWantedAfter)) ? Math.ceil((Date.parse(r.NotWantedAfter) - Date.now())/864e5) : null;
+  const urgent = daysLeft !== null && daysLeft <= RULES.urgentDays;
+  const say = (text, why) => steps.push({ text, why });
+
+  const hostOnly = q.kind === "chapter" && res.host && (!b || conf === "None" || conf === "Low");
+  if (hostOnly){
+    const h = res.host;
+    say("The host book is verified: " + [(h.authors||[])[0], h.title, h.year].filter(Boolean).join(", ") + ". The chapter itself isn't indexed in the article databases, which is common for older or print-only books.",
+        "Confirm the chapter title and pages from the book's table of contents (Google Books or the publisher's page) if the patron's details look doubtful.");
+  }
+  // Can't verify
+  else if (!b || conf === "None" || conf === "Low"){
+    say("Treat the citation as unverified before sending it anywhere.",
+        conf === "Low" && b ? "The closest database match is weak (" + b.score + "/100). Compare it with the request below." : "No database returned a plausible match.");
+    if (r.CitedIn) say("Check the source the patron cited: " + r.CitedIn + ".", "Errors usually come from the citing work; the original reference often clears it up.");
+    say("Try a looser search with the \"Search again\" box, e.g. the 3–4 most distinctive title words plus the author's surname.", "");
+    say("If still nothing, ask the patron for a screenshot or link to where they saw the item.", "");
+  }
+
+  // Free copy first
+  if (res.oa && res.oa.url) say("Send the patron the free legal copy (" + (res.oa.version || res.oa.host || "open access") + ") and close the request if it meets their need.", res.oa.url);
+
+  // Fix the record
+  if (fixes.length && b && conf !== "None") say("Update the request before sending: " + fixes.map(f => f.label.toLowerCase()).join(", ") + ".", "Lenders reject citations that don't match their holdings.");
+  if (adds.length && b && conf !== "Low" && conf !== "None") say("Add the verified identifiers to the request: " + adds.map(a => a.label + " " + a.got.split(",")[0]).join("; ") + ".", "Searching by identifier finds lenders faster and avoids wrong-edition supply.");
+
+
+  if (q.kind === "book"){
+    const isbn = b && b.isbn && b.isbn[0], oclc = b && b.oclc && b.oclc[0];
+    say("Search " + RULES.primaryNetwork + " by " + (oclc ? "OCLC # " + oclc : isbn ? "ISBN " + isbn : "title and author") + " and build the lending string from libraries showing holdings.",
+        norm(r.AcceptAlternateEdition) === "yes" ? "Patron accepts any edition: use the work-level (all editions) results for a longer lending string." :
+        b && b.editions > 1 ? "This work has " + b.editions + " editions and the patron hasn't said any edition is fine; confirm the edition." : "");
+    if (age !== null && age <= RULES.purchaseIfPublishedWithinYears && RULES.purchaseProgram)
+      say("Consider " + RULES.purchaseProgram + " instead of borrowing.", "Published " + year + "; new titles are often cheaper to buy and lenders may not lend them yet.");
+    if (year && year < RULES.publicDomainBefore) say("Check HathiTrust and the Internet Archive for a full-view digital copy.", "Published " + year + ", likely public domain in the US.");
+    if (norm(r.AcceptNonEnglish) === "no" && b && b.language && !/eng/.test(b.language)) say("Confirm the language with the patron.", "Records list language(s): " + b.language + ".");
+  } else {
+    const issn = b && [].concat(b.issn||[])[0];
+    if (q.kind === "chapter" && (res.host || (b && conf !== "Low" && conf !== "None"))){
+      const hisbn = res.host && res.host.isbn && res.host.isbn[0];
+      say("Request a scan of the chapter from the host book" + (hisbn ? " (ISBN " + hisbn + ")" : "") + " through " + RULES.primaryNetwork + ".",
+          "Put chapter title, authors and pages in the request; if no lender will scan it, borrow the whole book instead.");
+    } else if (q.kind === "article") {
+      if (RULES.fastNetwork) say("Send to " + RULES.fastNetwork + " first" + (issn ? " using ISSN " + issn : "") + (year ? " for " + year : "") + ".", urgent ? "Needed within " + daysLeft + " day(s)." : "Fast article delivery for journals held by partners.");
+      say("Otherwise search " + RULES.primaryNetwork + (issn ? " by ISSN " + issn : " by journal title") + " and pick lenders whose holdings cover " + (b && b.volume ? "vol. " + b.volume + ", " : "") + (year || "the year") + ".",
+          "Check holdings statements: many libraries have gaps or embargoes for recent years.");
+      if (RULES.articleSupplier && (urgent || (age !== null && age <= RULES.recentArticleYears)))
+        say("If no lender can supply quickly, buy from " + RULES.articleSupplier + (b && b.doi ? " using DOI " + b.doi : "") + ".", urgent ? "The request is urgent." : "Recent articles are often under embargo for lenders.");
+      else if (RULES.articleSupplier) say("If lenders can't supply, fall back to " + RULES.articleSupplier + ".", "");
+    }
+    if (year && year < RULES.publicDomainBefore) say("Check HathiTrust and the Internet Archive for a digitized volume.", "Published " + year + ".");
+    if (norm(r.AcceptNonEnglish) === "no" && b && b.language && b.language !== "en") say("Confirm the language with the patron.", "Record language: " + b.language + ".");
+  }
+
+  if (r.LendingString) say("Remember lenders already tried: " + r.LendingString + ".", "If these were exhausted, move to the alternatives above.");
+  if (urgent && q.kind === "book") say("Flag as rush: the patron needs it within " + daysLeft + " day(s).", "");
+  return steps;
+}
+
+/* Handy search links */
+function searchLinks(r, res){
+  const q = res.q, b = res.best, L = [];
+  const enc = encodeURIComponent;
+  const title = (b && b.title) || q.title || "";
+  const who = surname((b && b.authors && b.authors[0]) || q.author);
+  if (q.kind === "book"){
+    const id = (b && b.oclc && b.oclc[0]) ? "no:" + b.oclc[0] : (b && b.isbn && b.isbn[0]) ? "bn:" + b.isbn[0] : "ti:" + title + (who ? " au:" + who : "");
+    L.push(["WorldCat", "https://search.worldcat.org/search?q=" + enc(id)]);
+    L.push(["HathiTrust", "https://catalog.hathitrust.org/Search/Home?lookfor=" + enc(title + " " + who) + "&type=all"]);
+    L.push(["Internet Archive", "https://archive.org/search?query=" + enc(title)]);
+    if (b && b.link) L.push(["Open Library record", b.link]);
+  } else {
+    const issn = b && [].concat(b.issn||[])[0];
+    if (q.kind === "article") L.push(["WorldCat (journal)", "https://search.worldcat.org/search?q=" + enc(issn ? "in:" + issn : "ti:" + ((b && b.container) || q.container || ""))]);
+    L.push(["Google Scholar", "https://scholar.google.com/scholar?q=" + enc('"' + title + '"' + (who ? " " + who : ""))]);
+    if (b && b.doi) L.push(["Publisher page (DOI)", "https://doi.org/" + b.doi]);
+    if (q.kind === "chapter") L.push(["WorldCat (book)", "https://search.worldcat.org/search?q=" + enc(res.host && res.host.isbn && res.host.isbn[0] ? "bn:" + res.host.isbn[0] : "ti:" + (q.container||""))]);
+  }
+  return L;
+}
+
+/* Plain-text summary for ILLiad notes */
+function summaryText(r, res, rows, steps){
+  const b = res.best, lines = [];
+  const trusted = res.confidence === "High" || res.confidence === "Medium";
+  if (!b && res.host) lines.push("Citation check (" + new Date().toLocaleDateString() + "): host book verified (" + [res.host.title, res.host.year, (res.host.isbn||[])[0] && "ISBN " + res.host.isbn[0]].filter(Boolean).join(", ") + "); chapter not in article databases");
+  else lines.push("Citation check (" + new Date().toLocaleDateString() + "): confidence " + res.confidence + (b ? " (" + b.score + "/100, " + b.sources.join(" + ") + ")" : ""));
+  if (b) lines.push((trusted ? "Verified: " : "Closest match (unconfirmed): ") + citationLine(res));
+  const fx = trusted ? rows.filter(x => x.status === "fix" || x.status === "add") : [];
+  if (fx.length) lines.push("Changes: " + fx.map(f => f.label + ": " + (f.req ? '"' + f.req + '" -> ' : "") + '"' + f.got + '"').join("; "));
+  if (res.oa && res.oa.url) lines.push("Free copy: " + res.oa.url);
+  steps.forEach((s,i) => lines.push((i+1) + ". " + s.text));
+  return lines.join("\n");
+}
+function citationLine(res){
+  const b = res.best; if (!b) return "";
+  const au = (b.authors||[]).slice(0,3).join("; ") + ((b.authors||[]).length > 3 ? " et al." : "");
+  const t = [b.title, b.subtitle].filter(Boolean).join(": ");
+  if (res.q.kind === "book") return [au, t, b.publisher, b.year].filter(Boolean).join(". ");
+  return [au, t, [b.container, b.volume && "vol. " + b.volume, b.issue && "no. " + b.issue, b.year && "(" + b.year + ")", b.pages && "pp. " + b.pages].filter(Boolean).join(", ")].filter(Boolean).join(". ");
+}
+
+/* =================================================================
+   6b. eResource helpers: OpenURL for your link resolver, holdings links
+   ================================================================= */
+/* Primo's /discovery/openurl page, in the same OpenURL 0.1 format EBSCO sends:
+   genre, atitle, title, issn/isbn, volume, issue, spage, pages, date, au, ID=doi:... */
+function primoOpenURL(base, r, res){
+  const q = res.q, b = res.best || {};
+  const p = [];
+  const set = (k,v) => { if (v !== undefined && v !== null && String(v).trim()) p.push(k + "=" + encodeURIComponent(String(v).trim())); };
+  const firstAuthor = (b.authors && b.authors[0]) || q.author || "";
+  const year = b.year || q.year;
+  if (q.kind === "book"){
+    set("genre", "book");
+    set("title", [b.title, b.subtitle].filter(Boolean).join(": ") || q.title);
+    set("isbn", (b.isbn||[])[0] || findISBNs(r)[0]);
+    if (b.doi || findDOI(r)) set("ID", "doi:" + (b.doi || findDOI(r)));
+  } else {
+    const chapter = q.kind === "chapter";
+    set("genre", chapter ? "bookitem" : "article");
+    set("atitle", [b.title, b.subtitle].filter(Boolean).join(": ") || q.title);
+    set("title", b.container || q.container);
+    if (chapter) set("isbn", (res.host && res.host.isbn || [])[0] || findISBNs(r)[0]);
+    else set("issn", String([].concat(b.issn||[])[0] || findISSN(r) || "").replace(/-/g, ""));
+    set("volume", b.volume || q.volume); set("issue", b.issue || q.issue);
+    const pr = pageRange(b.pages || q.pages);
+    if (pr){ set("spage", pr.start); if (pr.end) set("pages", pr.start + "-" + pr.end); }
+    if (b.doi) set("ID", "doi:" + b.doi);
+  }
+  set("date", year);
+  set("au", firstAuthor);
+  set("sid", "ILLiad:CitationCheck");
+  return base + (base.includes("?") ? "&" : "?") + p.join("&");
+}
+function openURL(base, r, res){
+  if (!base) return "";
+  const q = res.q, b = res.best || {};
+  const p = new URLSearchParams();
+  p.set("url_ver","Z39.88-2004"); p.set("ctx_ver","Z39.88-2004"); p.set("rfr_id","info:sid/illiad:citationcheck");
+  const set = (k,v) => { if (v !== undefined && v !== null && String(v).trim()) p.set(k, String(v).trim()); };
+  const firstAuthor = (b.authors && b.authors[0]) || q.author || "";
+  const year = b.year || q.year;
+  if (q.kind === "book"){
+    p.set("rft_val_fmt","info:ofi/fmt:kev:mtx:book"); p.set("rft.genre","book");
+    set("rft.btitle", [b.title, b.subtitle].filter(Boolean).join(": ") || q.title);
+    set("rft.isbn", (b.isbn||[])[0] || findISBNs(r)[0]);
+    set("rft.pub", b.publisher || q.publisher);
+  } else {
+    const chapter = q.kind === "chapter";
+    p.set("rft_val_fmt", chapter ? "info:ofi/fmt:kev:mtx:book" : "info:ofi/fmt:kev:mtx:journal");
+    p.set("rft.genre", chapter ? "bookitem" : "article");
+    set("rft.atitle", [b.title, b.subtitle].filter(Boolean).join(": ") || q.title);
+    set(chapter ? "rft.btitle" : "rft.jtitle", b.container || q.container);
+    set(chapter ? "rft.isbn" : "rft.issn", chapter ? ((res.host && res.host.isbn || [])[0] || findISBNs(r)[0]) : ([].concat(b.issn||[])[0] || findISSN(r)));
+    set("rft.volume", b.volume || q.volume); set("rft.issue", b.issue || q.issue);
+    const pr = pageRange(b.pages || q.pages);
+    if (pr){ set("rft.spage", pr.start); set("rft.epage", pr.end); }
+    if (b.doi) p.set("rft_id", "info:doi/" + b.doi);
+  }
+  set("rft.date", year);
+  const last = String(firstAuthor).includes(",") ? firstAuthor.split(",")[0] : String(firstAuthor).split(" ").pop();
+  set("rft.aulast", last);
+  return base + (base.includes("?") ? (/[?&]$/.test(base) ? "" : "&") : "?") + p.toString();
+}
+function eHoldingsLinks(r, res){
+  const q = res.q, b = res.best || {}, enc = encodeURIComponent, L = [];
+  const ou = openURL(cfg.resolver, r, res);
+  if (ou) L.push(["Check Bowdoin access (Primo)", /\/discovery\/openurl/.test(cfg.resolver) ? primoOpenURL(cfg.resolver, r, res) : ou, true]);
+  const issn = [].concat(b.issn||[])[0] || findISSN(r);
+  const isbn = (b.isbn||[])[0] || (res.host && res.host.isbn || [])[0] || findISBNs(r)[0];
+  const itemTitle = [b.title, b.subtitle].filter(Boolean).join(": ") || q.title;
+  // Search terms: drop characters that confuse Primo's search box (# " ? etc.)
+  const tidy = t => String(t || "").replace(/[#"?*()\[\]{}]/g, " ").replace(/\s+/g, " ").trim();
+  const primo = (label, term, main) => { term = tidy(term); if (term && cfg.catalog) L.push([label, cfg.catalog.replace("{q}", enc(term)), main]); };
+  if (q.kind === "book"){
+    primo("Search Primo by ISBN " + (isbn || ""), isbn, true);
+    primo("Search Primo by DOI", b.doi || findDOI(r), !isbn);
+    primo("Search Primo by title", mainTitleOf(itemTitle).length > 3 ? itemTitle : itemTitle, !isbn && !(b.doi || findDOI(r)));
+  } else {
+    const container = b.container || q.container;
+    primo("Search Primo by DOI", b.doi, true);
+    primo(q.kind === "chapter" ? "Search Primo by chapter title" : "Search Primo by article title", itemTitle, !b.doi);
+    if (q.kind === "article") primo("Search Primo by ISSN " + (issn || ""), issn, false);
+    else primo("Search Primo by ISBN " + (isbn || ""), isbn, false);
+    primo(q.kind === "chapter" ? "Search Primo by book title" : "Search Primo by journal title", container, false);
+  }
+  // exactly one highlighted button
+  let seen = false; for (const x of L){ if (x[2] && !seen) seen = true; else x[2] = false; } if (!seen && L[0]) L[0][2] = true;
+  if (b.doi) L.push(["Publisher page (DOI)", "https://doi.org/" + b.doi]);
+  return L;
+}
+function eSummary(r, res){
+  const lines = [], b = res.best;
+  const trusted = res.confidence === "High" || res.confidence === "Medium";
+  lines.push("eResource check (" + new Date().toLocaleDateString() + "): confidence " + res.confidence);
+  if (b) lines.push((trusted ? "Verified: " : "Closest match (unconfirmed): ") + citationLine(res));
+  const ids = b ? [b.doi && "DOI " + b.doi, [].concat(b.issn||[]).length && "ISSN " + [].concat(b.issn).join(", "), (b.isbn||[]).length && "ISBN " + b.isbn.slice(0,2).join(", ")].filter(Boolean) : [];
+  if (ids.length) lines.push(ids.join(" · "));
+  const ou = openURL(cfg.resolver, r, res);
+  if (ou) lines.push("Link resolver: " + ou);
+  return lines.join("\n");
+}
+
+/* =================================================================
+   6c. Bowdoin access, read automatically from Alma's link resolver.
+       The resolver is asked for its XML answer (svc_dat=CTO), which lists
+       Bowdoin's online services with coverage, and print holdings.
+       Alma is reached through StrategyAgent.lua (function AlmaFetch),
+       because browsers block pages from reading Alma directly.
+   ================================================================= */
+function almaCandidates(){
+  if (/\/view\/uresolver\//.test(cfg.alma)) return [cfg.alma];
+  if (/\/view\/uresolver\//.test(cfg.resolver)) return [cfg.resolver];
+  let remembered = "";
+  try { remembered = localStorage.getItem("illcheck_alma") || ""; } catch(e){}
+  let inst = "";
+  try { inst = (new URL(cfg.catalog.replace("{q}","x")).searchParams.get("vid") || "").split(":")[0]; } catch(e){}
+  if (!inst) return remembered ? [remembered] : [];
+  let primoHost = "";
+  try { primoHost = new URL(cfg.catalog.replace("{q}","x")).origin; } catch(e){}
+  const hosts = ["bowdoin", "na01", "na02", "na03", "na04", "na05", "na06", "na07"];
+  const list = [...(primoHost ? [primoHost + "/view/uresolver/" + inst + "/openurl"] : []),
+                ...hosts.map(h => "https://" + h + ".alma.exlibrisgroup.com/view/uresolver/" + inst + "/openurl")];
+  return remembered ? [remembered, ...list.filter(u => u !== remembered)] : list;
+}
+async function bridgeCall(name, ...args){
+  const wv = typeof window !== "undefined" && window.chrome && window.chrome.webview && window.chrome.webview.hostObjects;
+  if (!wv) throw new Error("The automatic access check only runs inside ILLiad (WebView2 browser, ILLiad 9.2.4+).");
+  if (wv.atlasAddon){ try { return await wv.atlasAddon.ExecuteAddonFunction(name, ...args); } catch(e){ /* fall back to sync */ } }
+  return wv.sync.atlasAddon.ExecuteAddonFunction(name, ...args);
+}
+const stripTags = t => String(t || "").replace(/<br\s*\/?>/gi, "; ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").replace(/[\s;]+$/, "").replace(/^[\s;]+/, "").trim();
+function parseAlmaCTO(xml){
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  if (doc.getElementsByTagName("parsererror").length) return null;
+  const root = doc.documentElement;
+  if (!root || !/uresolver|context/i.test(root.localName)) return null;
+  const services = [...doc.getElementsByTagNameNS("*", "context_service")].map(cs => {
+    const keys = {};
+    for (const k of cs.getElementsByTagNameNS("*", "key")) keys[k.getAttribute("id")] = (k.textContent || "").trim();
+    const urlEl = cs.getElementsByTagNameNS("*", "resolution_url")[0] || cs.getElementsByTagNameNS("*", "target_url")[0];
+    return { type:cs.getAttribute("service_type") || "", keys, url:urlEl ? urlEl.textContent.trim() : "" };
+  });
+  const pick = (keys, re) => { for (const [k,v] of Object.entries(keys)) if (re.test(k) && v) return v; return ""; };
+  const online = [], print = [], digital = [], license = [];
+  for (const s of services){
+    const k = s.keys;
+    for (const [id,v] of Object.entries(k)) if (/licen|(^|_)ill(_|$)|interlibrary/i.test(id) && v && !/^(false|0)$/i.test(v)) license.push(id.replace(/_/g," ") + ": " + stripTags(v));
+    if (/FullTxt/i.test(s.type)){
+      online.push({ name: k.package_public_name || k.package_display_name || k.public_name || k.package_name || k.interface_name || "Online resource",
+        coverage: stripTags(k.Availability || k.availability || pick(k, /coverage/i)), available: !/^true$/i.test(k.Filtered || k.filtered || ""),
+        reason: stripTags(k.filter_reason || ""), free: k.Is_free === "1" || /^true$/i.test(k.Is_free || ""), note: stripTags(k.public_note || k.Authentication_note || ""), url: s.url });
+    } else if (/Holding/i.test(s.type)){
+      print.push({ library: pick(k, /library/i), location: pick(k, /location/i), call: pick(k, /call/i), status: pick(k, /avail/i) });
+    } else if (/Digital/i.test(s.type)){
+      digital.push({ name: k.public_name || k.package_public_name || "Digital copy", url: s.url });
+    }
+  }
+  return { services, online, print, digital, license:[...new Set(license)] };
+}
+async function almaAccess(r, res, log){
+  const cands = almaCandidates();
+  if (!cands.length) throw new Error("No Alma address to try. Add Bowdoin's Alma resolver address as AlmaResolverURL in Manage Addons.");
+  const tried = [];
+  let emptyAnswer = null;   // a valid but empty reply, used only if no address returns services
+  for (const base of cands){
+    const url = openURL(base, r, res) + "&svc_dat=CTO";
+    const raw = String(await bridgeCall("AlmaFetch", url, cands.length > 1 ? 6000 : 12000) || "");
+    const host = new URL(base).host;
+    if (raw.startsWith("OK")){
+      const parsed = parseAlmaCTO(raw.slice(3));
+      if (parsed && !parsed.services.length && cands.length > 1){
+        if (!emptyAnswer) emptyAnswer = { ...parsed, base, pageURL: openURL(base, r, res) };
+        tried.push(host + " (answered, but listed no services)");
+        continue;
+      }
+      if (parsed){
+        log("Alma resolver at " + host, true);
+        try { if (cands.length > 1) localStorage.setItem("illcheck_alma", base); } catch(e){}
+        return { ...parsed, base, pageURL: openURL(base, r, res) };
+      }
+      tried.push(host + " (not a resolver answer)");
+    } else tried.push(host + " (" + raw.replace(/^ERR\s*/, "").split("\n").pop().slice(0, 80) + ")");
+  }
+  if (emptyAnswer){ log("Alma resolver at " + new URL(emptyAnswer.base).host + " (no services listed)", true); return emptyAnswer; }
+  log("Alma resolver: no address answered", false);
+  throw new Error("Couldn't reach Bowdoin's Alma resolver. Tried: " + tried.join("; ") + ". Add the correct address as AlmaResolverURL in Manage Addons.");
+}
+
+/* =================================================================
+   7. Page display
+   ================================================================= */
+if (typeof document !== "undefined") (function(){
+  const $ = id => document.getElementById(id);
+  const out = $("results");
+  const inIlliad = [...P.keys()].some(k => k.startsWith("f_"));
+  let request = {};
+  for (const [k,v] of P.entries()) if (k.startsWith("f_") && v.trim()) request[k.slice(2)] = v.trim();
+  let summary = "";
+  let mode = "borrowing", modeAuto = true;
+  let autoFetchConsidered = false;   // the automatic PDF fetch is only considered once, when the tab opens
+
+  function setMode(m, auto){
+    mode = m; modeAuto = auto;
+    for (const b of document.querySelectorAll(".modes button")) b.setAttribute("aria-pressed", String(b.dataset.mode === m));
+    $("modetag").textContent = auto ? "auto-detected" : "chosen manually";
+    $("run").textContent = m === "eresource" ? "Check eResource" : "Check citation";
+  }
+  function start(){
+    if (cfg.auto || !inIlliad) check();
+    else out.innerHTML = '<div class="card">Click <strong>Check citation</strong> to verify this request.</div>';
+  }
+
+  /* ---------- shared pieces ---------- */
+  function verdictCard(res){
+    const b = res.best;
+    let h = '<div class="card verdict"><span class="badge ' + (!b && res.host ? "Medium" : res.confidence) + '">' + (!b && res.host ? "Book verified" : res.confidence === "None" ? "No match" : res.confidence + " confidence") + '</span><div class="cite">';
+    if (b){
+      if (res.confidence === "Low") h += '<div class="ids">Closest match, not confirmed:</div>';
+      h += "<strong>" + esc(citationLine(res)) + "</strong>";
+      const ids = [b.doi && "DOI " + b.doi, [].concat(b.issn||[]).length && "ISSN " + [].concat(b.issn).join(", "), (b.isbn||[]).length && "ISBN " + b.isbn.slice(0,2).join(", "), (b.oclc||[]).length && "OCLC " + b.oclc[0]].filter(Boolean);
+      h += '<div class="ids">' + esc(ids.join(" · ")) + (ids.length ? " · " : "") + "match score " + b.score + "/100 from " + esc(b.sources.join(" + ")) + (b.byId ? " (identifier match)" : "") + "</div>";
+    } else if (res.q.kind === "chapter" && res.host){
+      const hb = res.host;
+      h += "<strong>Host book verified: " + esc([(hb.authors||[]).slice(0,2).join("; "), hb.title, hb.publisher, hb.year].filter(Boolean).join(". ")) + "</strong>";
+      h += '<div class="ids">' + esc([(hb.isbn||[]).length && "ISBN " + hb.isbn.slice(0,2).join(", "), (hb.oclc||[]).length && "OCLC " + hb.oclc[0]].filter(Boolean).join(" · ")) + " · chapter not found in article databases</div>";
+    } else h += "<strong>No database returned a plausible match for this citation.</strong>" + (res.candidates.length ? '<div class="ids">Weak results are listed under “Other possible matches”.</div>' : "");
+    return h + "</div></div>";
+  }
+  function compareCard(res, rows){
+    if (!rows.length) return "";
+    let h = '<div class="card"><h2>' + (res.confidence === "Low" ? "Request vs. closest match (unconfirmed)" : "Request vs. verified record") + '</h2><div class="tbl"><table><thead><tr><th>Field</th><th>Request</th><th>Verified</th><th>Confidence</th></tr></thead><tbody>';
+    const tag = { add:["add","Add to request"], none:["none","Not in record"] };
+    for (const x of rows){
+      const c = x.conf ? '<span class="badge ' + x.conf + '">' + x.conf + '</span> <span class="pct">' + Math.round(x.score * 100) + "%</span>"
+                       : '<span class="st ' + tag[x.status][0] + '">' + tag[x.status][1] + "</span>";
+      h += "<tr><td>" + esc(x.label) + "</td><td>" + esc(x.req) + "</td><td>" + esc(x.got) + '</td><td class="conf">' + c + "</td></tr>";
+    }
+    return h + "</tbody></table></div></div>";
+  }
+  /* Verified citation, part by part: one row per part of the citation with
+     the patron's value, the verified value and that part's confidence. */
+  function citationPartsCard(res, rows){
+    const b = res.best;
+    const overall = !b && res.host ? "Medium" : res.confidence;
+    const overallLabel = !b && res.host ? "Book verified" : res.confidence === "None" ? "No match" : res.confidence + " confidence";
+    let h = '<div class="card"><div class="verdict" style="margin-bottom:10px"><span class="badge ' + overall + '">' + esc(overallLabel) + '</span><div class="cite"><h2 style="margin:2px 0 0">Verified citation</h2>';
+    if (b){
+      if (res.confidence === "Low") h += '<div class="ids">Closest match, not confirmed</div>';
+      h += '<div class="ids">Match score ' + b.score + "/100 from " + esc(b.sources.join(" + ")) + (b.byId ? " (identifier match)" : "") + "</div>";
+    } else if (res.q.kind === "chapter" && res.host){
+      const hb = res.host;
+      h += '<div class="ids">Host book verified: ' + esc([hb.title, hb.year, (hb.isbn||[])[0] && "ISBN " + hb.isbn[0]].filter(Boolean).join(" · ")) + ". Chapter not found in article databases.</div>";
+    } else {
+      h += '<div class="ids">No database returned a plausible match' + (res.candidates.length ? "; weak results are under “Other possible matches”." : ".") + "</div>";
+    }
+    h += "</div></div>";
+    if (rows.length){
+      const tag = { add:["add","Add to request"], none:["none","Not in record"] };
+      h += '<div class="tbl"><table><thead><tr><th>Part</th><th>Request</th><th>Verified</th><th>Confidence</th></tr></thead><tbody>';
+      for (const x of rows){
+        const c = x.conf ? '<span class="badge ' + x.conf + '">' + x.conf + '</span> <span class="pct">' + Math.round(x.score * 100) + "%</span>"
+                         : '<span class="st ' + tag[x.status][0] + '">' + tag[x.status][1] + "</span>";
+        h += "<tr><td>" + esc(x.label) + "</td><td>" + esc(x.req) + "</td><td>" + esc(x.got) + '</td><td class="conf">' + c + "</td></tr>";
+      }
+      h += "</tbody></table></div>";
+    }
+    return h + "</div>";
+  }
+  function othersCard(res){
+    const b = res.best, others = res.candidates.slice(b ? 1 : 0, 6);
+    let h = '<div class="card"><h2>' + (others.length ? "Other possible matches" : "Search again") + "</h2>";
+    others.forEach(c => {
+      const idx = res.candidates.indexOf(c);
+      h += '<div class="cand"><span class="sc">' + c.score + '/100</span><div style="flex:1">' + esc([ (c.authors||[]).slice(0,2).join("; "), c.title, c.container, c.year ].filter(Boolean).join(". ")) +
+           '<div class="src">' + esc(c.sources.join(" + ") + (c.doi ? " · DOI " + c.doi : "")) + '</div></div><button type="button" data-pick="' + idx + '">Use this</button></div>';
+    });
+    return h + '<form class="research" id="research" style="margin-top:10px"><label for="rq" hidden>Search again</label><input id="rq" placeholder="Search again with your own words, e.g. distinctive title words + author" value=""><button type="submit">Search</button></form></div>';
+  }
+  function wireOthers(res, again){
+    out.querySelectorAll("[data-pick]").forEach(btn => btn.onclick = () => {
+      const c = res.candidates[+btn.dataset.pick];
+      res.candidates.splice(+btn.dataset.pick, 1); res.candidates.unshift(c);
+      res.best = c; res.confidence = c.score >= 60 ? confidenceOf(c.score, c.byId) : "Medium"; res.oa = c.oaUrl ? { url:c.oaUrl, host:"OpenAlex" } : null;
+      [...out.children].forEach(n => { if (!n.classList.contains("banner") && n.tagName !== "DETAILS") n.remove(); });
+      again(res);
+    });
+    $("research").onsubmit = e => { e.preventDefault(); const v = $("rq").value.trim(); if (v) check(v); };
+  }
+
+  /* ---------- eResource mode: verify + check our e-holdings ---------- */
+  function renderEResource(res){
+    const rows = compareFields(request, res);
+    summary = eSummary(request, res);
+    $("copy").disabled = false;
+    let h = citationPartsCard(res, rows);
+
+    h += '<div class="card" id="access-card"><h2>Bowdoin access</h2><div class="progress"><span class="spin"></span>Asking Bowdoin\'s link resolver…</div></div>';
+    h += fetchPdfCard(res);
+    const links = eHoldingsLinks(request, res);
+    h += '<div class="card"><h2>Check our e-holdings</h2>';
+    if (links.length) h += '<div class="holdings">' + links.map(([t,u,main]) => '<a href="' + esc(u) + '" target="_blank" rel="noopener"' + (main ? ' class="main"' : "") + ">" + esc(t) + "</a>").join("") + "</div>";
+    const b = res.best || {};
+    const ids = [["DOI", b.doi], ["ISSN", [].concat(b.issn||[])[0]], ["ISBN", (b.isbn||[])[0] || (res.host && res.host.isbn || [])[0] || findISBNs(request)[0]], ["Title", res.q.kind === "article" ? (b.container || res.q.container) : (res.q.container || b.title || res.q.title)]].filter(x => x[1]);
+    if (ids.length) h += '<div class="idlist">' + ids.map(([k,v]) => '<button type="button" data-copy="' + esc(v) + '" title="Copy ' + esc(k) + '">' + esc(k + ": " + v) + "</button>").join("") + "</div>";
+    h += "</div>";
+
+    h += othersCard(res);
+    out.insertAdjacentHTML("beforeend", h);
+    out.querySelectorAll("[data-copy]").forEach(btn => btn.onclick = async () => {
+      const old = btn.textContent;
+      try { await navigator.clipboard.writeText(btn.dataset.copy); btn.textContent = "Copied"; } catch(e){ btn.textContent = "Copy failed"; }
+      setTimeout(() => btn.textContent = old, 1400);
+    });
+    wireOthers(res, renderEResource);
+    wireFetchPdf(res);
+    sendCitation(res);
+    const firstCheck = !autoFetchConsidered;
+    autoFetchConsidered = true;
+    res.accessReady = loadAccess(res).catch(() => {}).finally(() => {
+      if (!res.almaLinks) res.almaLinks = [];
+      refreshFetchCard(res);
+    });
+    res.accessReady.then(() => { if (firstCheck) maybeAutoFetch(res); });
+  }
+
+  /* ---------- Fetch PDF (eResource page) ----------
+     Asks StrategyAgent.lua (function FetchPdf) to download the article on this
+     PC (campus IP) and hold it for review (or save it as <TN>.pdf in the
+     PdfSaveFolder setting when review is off). See maybeAutoFetch for the
+     automatic fetch when the tab opens. */
+  function fetchPdfCard(res){
+    const tn = String(request.TransactionNumber || "").trim();
+    const h = '<div class="card" id="pdf-card"><h2>Fetch PDF</h2>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">' +
+      '<button type="button" class="primary" id="fetch-pdf">Fetch PDF' + (tn ? " → " + esc(tn) + ".pdf" : "") + "</button>" +
+      '<span class="pct" id="pdf-sources"></span></div>' +
+      '<div class="pct" id="pdf-alma" style="margin-top:6px"></div>' +
+      '<p class="modetag" id="pdf-why" style="margin:8px 0 0"></p>' +
+      '<div id="pdf-status" style="margin-top:10px"></div></div>';
+    setTimeout(() => refreshFetchCard(res), 0);
+    return h;
+  }
+  /* Where Fetch PDF will look, in order. Bowdoin's verified links arrive when
+     the Bowdoin access check finishes, so this runs again then. */
+  function refreshFetchCard(res){
+    const btn = $("fetch-pdf"); if (!btn) return;
+    const b = res.best || {};
+    const doi = b.doi || findDOI(request);
+    const tn = String(request.TransactionNumber || "").trim();
+    const trusted = res.confidence === "High" || res.confidence === "Medium";
+    const alma = res.almaLinks || [];
+    const any = !!(doi || (res.oa && res.oa.url) || cfg.eds || alma.length);
+    let why = "";
+    if (!tn) why = "This request has no transaction number to name the file.";
+    else if (!any) why = res.almaLinks ? "No Bowdoin access link, DOI or free copy was found, so there is nothing to fetch automatically."
+                                       : "No DOI or free copy was found. Waiting for the Bowdoin access check…";
+    else if (!trusted) why = cfg.review
+      ? "The citation isn't verified (confidence " + res.confidence + "), so check the PDF's first page carefully before saving."
+      : "The citation isn't verified (confidence " + res.confidence + "). Confirm the right item before fetching.";
+    const steps = [alma.length ? "Bowdoin's access (" + alma.length + " link" + (alma.length === 1 ? "" : "s") + ")" : "",
+                   res.oa && res.oa.url ? "the free copy" : "", cfg.eds ? "EBSCO" : "", doi ? "the publisher via DOI " + doi : ""].filter(Boolean);
+    $("pdf-sources").textContent = steps.length ? steps.reduce((t, x, i, a) => t + (i === 0 ? "Tries " : i === a.length - 1 ? ", then " : ", ") + x, "") + "." : "";
+    $("pdf-alma").innerHTML = alma.length ? "Bowdoin access, in order: " + alma.map(([n, u], i) => (i + 1) + ". " + link(u, n)).join(" · ") : "";
+    $("pdf-why").textContent = why; $("pdf-why").hidden = !why;
+    // don't touch the button while a fetch or review is under way
+    if (!$("pdf-status").innerHTML.trim()) btn.disabled = !tn || !any;
+  }
+  function wireFetchPdf(res){
+    const btn = $("fetch-pdf"); if (!btn) return;
+    btn.onclick = () => doFetch(res, false);
+  }
+  async function doFetch(res, auto, skip){
+      skip = skip || "";
+      const btn = $("fetch-pdf"), st = $("pdf-status"); if (!btn || !st) return;
+      const b = res.best || {};
+      const doi = b.doi || findDOI(request) || "";
+      const oa = (res.oa && res.oa.url) || "";
+      const tn = String(request.TransactionNumber || "").trim();
+      btn.disabled = true;
+      st.innerHTML = '<div class="progress"><span class="spin"></span>' + (skip ? "Trying a different way to fetch the PDF… " : auto ? "Fetching the PDF automatically (citation confidence: " + esc(res.confidence || "unknown") + ")… " : "Downloading… ") + "ILLiad may pause for a few seconds.</div>";
+      let raw;
+      const wantTitle = [b.title, b.subtitle].filter(Boolean).join(": ") || reqView(request).title || "";
+      const wantAuthor = surname(((b.authors || [])[0]) || reqView(request).author || "");
+      if (res.accessReady) await res.accessReady;          // Bowdoin's links come from the access check
+      const almaText = (res.almaLinks || []).map(([n, u]) => String(n).replace(/[\t\r\n]+/g, " ") + "\t" + u).join("\n");
+      try { raw = String(await bridgeCall("FetchPdf", tn, doi, oa, skip, wantTitle, wantAuthor, almaText) || ""); }
+      catch(e){ st.innerHTML = '<p class="modetag" style="margin:0">' + esc(e.message.replace("automatic access check", "PDF download")) + "</p>"; btn.disabled = false; return; }
+      const lines = raw.split("\n");
+      if (lines[0] === "OK" || lines[0] === "PENDING"){
+        const [kind, path, bytes, source, pageTitle, pageDoi, route] = lines;
+        const expected = [b.title, b.subtitle].filter(Boolean).join(": ") || reqView(request).title || "";
+        const titleOk = pageTitle ? Math.max(similarity(expected, pageTitle), similarity(pageTitle, expected)) : null;
+        const doiOk = pageDoi ? pageDoi.toLowerCase() === doi.toLowerCase() : null;
+        const warn = (doiOk === false) || (titleOk !== null && titleOk < 0.6);
+        const checks = esc((Number(bytes)/1048576).toFixed(1) + " MB from " + source) +
+                (pageDoi ? " · page DOI " + (doiOk ? "matches" : "DIFFERENT: " + pageDoi) : "") +
+                (pageTitle ? " · page title " + (titleOk >= 0.6 ? "matches" : "looks different: “" + pageTitle + "”") : "");
+        if (kind === "PENDING") return showReview(res, auto, { path, checks, warn, doiBad: doiOk === false, tn, doi, route: route || "", skip });
+        let h = (auto ? '<div class="pct" style="margin-bottom:6px">Fetched automatically (citation confidence: ' + esc(res.confidence || "unknown") + ').</div>' : "") +
+                '<span class="badge ' + (warn ? "Low" : "High") + '">' + (warn ? "Saved, check it" : "Saved") + "</span> " +
+                '<button type="button" data-copy="' + esc(path) + '" title="Copy file path">' + esc(path) + "</button>" +
+                '<div class="pct" style="margin-top:6px">' + checks + "</div>";
+        if (warn) h += '<p style="margin:8px 0 0">The publisher page may be a different article. Open the PDF and check it before sending.</p>';
+        st.innerHTML = h;
+        summary += "\nPDF saved: " + path;
+      } else {
+        const msg = lines[1] || "Unknown error", page = lines[2] || (doi ? "https://doi.org/" + doi : "");
+        const browserUrl = ((lines.find(l => l.startsWith("BROWSER\t")) || "").split("\t")[1]) || "";
+        st.innerHTML = (skip ? '<div class="pct" style="margin-bottom:6px">The previous PDF was discarded and nothing was saved.</div>' : auto ? '<div class="pct" style="margin-bottom:6px">Tried automatically (citation confidence: ' + esc(res.confidence || "unknown") + ').</div>' : "") +
+          '<span class="badge ' + (browserUrl ? "Medium" : "None") + '">' + (browserUrl ? "Needs the browser" : "Not fetched") + "</span> " + esc(msg) +
+          (browserUrl ? browserFetchHtml(browserUrl, tn) : "") +
+          (page ? '<div style="margin-top:6px">' + (browserUrl ? "Or download manually: " : "Download manually: ") + link(page, "open the publisher page") + " and save it as " + esc(tn) + ".pdf.</div>" : "");
+        btn.disabled = false;
+        if (browserUrl) wireBrowserFetch(res, browserUrl, tn, skip);
+      }
+      st.querySelectorAll("[data-copy]").forEach(x => x.onclick = async () => { try { await navigator.clipboard.writeText(x.dataset.copy); x.textContent = "Copied"; setTimeout(() => x.textContent = x.dataset.copy, 1400); } catch(e){} });
+  }
+
+
+  /* ---------- Download through the PDF Preview tab ----------
+     Some publishers (De Gruyter Brill) answer background downloads with a bot
+     check that only a real browser passes. "Open in PDF Preview" loads the PDF
+     address in the PDF Preview tab (ILLiad's WebView2 browser, on Bowdoin's IP);
+     staff download it there, and StrategyAgent.lua catches that one download
+     and holds it for review here. The addon never clicks on the publisher's site. */
+  function browserFetchHtml(url, tn){
+    return '<div class="browserfetch" style="margin-top:10px">' +
+      '<button type="button" class="primary" id="pdf-browser">Open in PDF Preview</button> ' +
+      '<span class="pct">Opens the PDF in the PDF Preview tab at the top of the request.</span>' +
+      '<ol class="pct" style="margin:8px 0 0 18px;padding:0">' +
+        "<li>Click the <strong>PDF Preview</strong> tab. If the site shows a check first, it clears by itself (or follow what it asks).</li>" +
+        "<li>When the PDF appears, click its <strong>download / save</strong> button (↓). If the site downloads it straight away, there's nothing to click.</li>" +
+        "<li>Come back here: the PDF shows up for review as " + esc(tn) + ".pdf.</li></ol>" +
+      '<div id="pdf-browser-status" class="pct" style="margin-top:6px"></div></div>';
+  }
+  let browserPoll = null;
+  function stopBrowserPoll(){ if (browserPoll){ clearInterval(browserPoll); browserPoll = null; } }
+  function wireBrowserFetch(res, url, tn, skip){
+    const b = $("pdf-browser"); if (!b) return;
+    b.onclick = async () => {
+      const out = $("pdf-browser-status");
+      const r = String(await bridgeCall("OpenInPreview", url, tn).catch(e => "ERR\n" + e.message) || "");
+      if (!r.startsWith("OK")){ out.textContent = "Couldn't open it: " + r.replace(/^ERR\s*/, ""); return; }
+      b.disabled = true;
+      out.innerHTML = '<span class="spin"></span>Opened in the PDF Preview tab. Waiting for the download…';
+      stopBrowserPoll();
+      const started = Date.now();
+      browserPoll = setInterval(async () => {
+        if (!$("pdf-browser-status")){ stopBrowserPoll(); bridgeCall("CancelPreviewCapture").catch(() => {}); return; }
+        let s = "";
+        try { s = String(await bridgeCall("PreviewCaptureStatus") || ""); } catch(e){ s = "ERR\n" + e.message; }
+        const [kind, ...rest] = s.split("\n");
+        if (kind === "WAIT"){
+          const mins = Math.floor((Date.now() - started) / 60000);
+          $("pdf-browser-status").innerHTML = '<span class="spin"></span>' + esc(rest[0] || "waiting") + (mins ? " (" + mins + " min)" : "") + "…";
+          return;
+        }
+        stopBrowserPoll();
+        if (kind === "PENDING" || kind === "OK"){
+          const [path, bytes, source] = rest;
+          const f = { path, checks: esc((Number(bytes)/1048576).toFixed(1) + " MB from " + source), warn: false, doiBad: false,
+                      tn, doi: (res.best && res.best.doi) || findDOI(request) || "", route: "browser", skip };
+          if (kind === "PENDING") return showReview(res, false, f);
+          $("pdf-status").innerHTML = '<span class="badge High">Saved</span> ' + esc(path) + '<div class="pct" style="margin-top:6px">' + f.checks + "</div>";
+          summary += "\nPDF saved: " + path;
+          return;
+        }
+        b.disabled = false;
+        $("pdf-browser-status").textContent = rest.join(" ") || "Something went wrong.";
+      }, 1500);
+    };
+  }
+
+  /* ---------- Review before saving ----------
+     A fetched PDF waits in the review folder. The viewer shows it; Save moves it
+     to PdfSaveFolder as <TN>.pdf (ApprovePdf), Discard deletes it (DiscardPdf). */
+  function pdfViewerSrc(path){
+    if (/^(data|blob|https?):/i.test(path)) return path;                 // preview / test pages
+    return "file:///" + encodeURI(String(path).replace(/\\/g, "/")).replace(/#/g, "%23");
+  }
+  function wireCopy(scope){
+    scope.querySelectorAll("[data-copy]").forEach(x => x.onclick = async () => { try { await navigator.clipboard.writeText(x.dataset.copy); const t = x.textContent; x.textContent = "Copied"; setTimeout(() => x.textContent = t, 1400); } catch(e){} });
+  }
+  /* ---------- First-page check ----------
+     Reads the text of the held PDF's first page (and page 2, in case page 1 is a
+     cover sheet) with pdf.js, and compares it with the verified citation:
+     title, authors, page numbers, DOI, journal and year. */
+  const PDFJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+  let pdfjsLoading = null;
+  function loadPdfJs(){
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!pdfjsLoading) pdfjsLoading = new Promise((ok, no) => {
+      const s = document.createElement("script");
+      s.src = PDFJS_BASE + "pdf.min.js";
+      s.onload = () => {
+        const lib = window.pdfjsLib;
+        if (!lib) { pdfjsLoading = null; return no(new Error("the PDF reader didn't load")); }
+        lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "pdf.worker.min.js";
+        ok(lib);
+      };
+      s.onerror = () => { pdfjsLoading = null; no(new Error("couldn't load the PDF reader from cdnjs.cloudflare.com")); };
+      document.head.appendChild(s);
+    });
+    return pdfjsLoading;
+  }
+  function base64Bytes(b64){
+    const bin = atob(String(b64).replace(/\s+/g, ""));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  // -> { numPages, pages:[text of page 1, text of page 2] }
+  async function readPdfStart(doc){
+    const pages = [];
+    for (let i = 1; i <= Math.min(2, doc.numPages); i++){
+      const tc = await (await doc.getPage(i)).getTextContent();
+      pages.push(tc.items.map(it => (it.str || "") + (it.hasEOL ? "\n" : " ")).join(""));
+    }
+    return { numPages: doc.numPages, pages };
+  }
+  // Draw every page into the review frame with pdf.js, so the PDF shows even where
+  // the browser's own viewer is blocked (local files in WebView2, sandboxed pages).
+  // The browser viewer (iframe) stays until page 1 has been drawn.
+  async function renderPdfPages(doc, f){
+    const frame = $("pdf-frame");
+    const still = () => { const b = $("pdf-frame"); return b && b.dataset.path === f.path ? b : null; };
+    if (!frame) return;
+    const box = document.createElement("div");
+    box.className = "pdfpages";
+    const width = Math.max(320, (frame.clientWidth || 700) - 28);
+    const dpr = window.devicePixelRatio || 1;
+    for (let i = 1; i <= doc.numPages; i++){
+      if (!still()) return;
+      const page = await doc.getPage(i);
+      const scale = width / page.getViewport({ scale: 1 }).width;
+      const vp = page.getViewport({ scale: scale * dpr });
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext && canvas.getContext("2d");
+      if (!ctx) throw new Error("this browser can't draw PDF pages");
+      canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+      canvas.style.width = Math.floor(vp.width / dpr) + "px";
+      canvas.setAttribute("aria-label", "Page " + i + " of " + doc.numPages);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const lab = document.createElement("div");
+      lab.className = "pdfpage-label"; lab.textContent = "Page " + i + " of " + doc.numPages;
+      box.appendChild(canvas); box.appendChild(lab);
+      if (i === 1){
+        const f2 = still(); if (!f2) return;
+        f2.replaceChildren(box);
+        const hint = $("viewer-hint"); if (hint) hint.textContent = "All " + doc.numPages + " page" + (doc.numPages === 1 ? "" : "s") + " shown above; scroll to read.";
+      }
+    }
+  }
+  // Compare page text with the citation. Returns { verdict:"ok"|"mid"|"bad"|"none", rows:[{part,state,note}] }
+  function checkPdfText(res, pdf, rawText, pageLabel){
+    const b = res.best || {}, q = reqView(request);
+    const raw = String(rawText || "").replace(/(\w)-\s*\n\s*(\w)/g, "$1$2");   // re-join words split across lines
+    const text = norm(raw);
+    if (text.replace(/\s/g, "").length < 40)
+      return { verdict:"none", rows:[{ part:"Text", state:"na", note:"No readable text on the first page (probably a scan). Check it by eye." }] };
+    const words = text.split(" "), wordSet = new Set(words);
+    const has = w => wordSet.has(w) || (w.length >= 5 && words.some(u => wordMatch(w, u)));
+    const coverage = s => { const t = tokens(s).filter(w => w.length > 1); return t.length ? t.filter(has).length / t.length : null; };
+    const rows = [];
+
+    // Title
+    let titleState = "na";
+    const title = [b.title, b.subtitle].filter(Boolean).join(": ") || q.title || "";
+    if (title){
+      const full = coverage(title), main = coverage(mainTitleOf(title));
+      const mainWords = tokens(mainTitleOf(title)).length;
+      if (full >= 0.8){ titleState = "ok"; rows.push({ part:"Title", state:"ok", note:"found " + pageLabel }); }
+      else if (main >= 0.85 && mainWords >= 2){ titleState = "ok"; rows.push({ part:"Title", state:"ok", note:"main title found " + pageLabel + " (subtitle differs or is missing)" }); }
+      else if ((full || 0) >= 0.5){ titleState = "mid"; rows.push({ part:"Title", state:"mid", note:"only partly found (" + Math.round(full*100) + "% of its words)" }); }
+      else { titleState = "bad"; rows.push({ part:"Title", state:"bad", note:"not found " + pageLabel }); }
+    }
+
+    // Authors / editors (up to six)
+    let authState = "na";
+    const names = ((b.authors && b.authors.length) ? b.authors : [q.author]).filter(Boolean).slice(0, 6);
+    const surnames = [...new Set(names.map(surname).filter(s => s.length > 1))];
+    if (surnames.length){
+      const found = surnames.filter(has), missing = surnames.filter(s => !found.includes(s));
+      const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+      authState = found.length === surnames.length ? "ok" : found.length ? "mid" : "bad";
+      rows.push({ part: b.editors ? "Editors" : "Authors", state:authState,
+        note: (found.length ? found.map(cap).join(", ") + " found" : "") + (found.length && missing.length ? "; " : "") + (missing.length ? missing.map(cap).join(", ") + " not found" : "") });
+    }
+
+    // Page numbers: page count and the first page number
+    const range = pageRange(b.pages || q.pages);
+    if (range && range.start){
+      const startSeen = wordSet.has(String(range.start));
+      const want = range.end && range.end >= range.start ? range.end - range.start + 1 : null;
+      const n = pdf.numPages;
+      let state, note;
+      if (want){
+        const countOk = n >= want && n <= want + 2;            // allows a cover sheet
+        state = countOk && startSeen ? "ok" : "mid";
+        note = "PDF has " + n + " page" + (n === 1 ? "" : "s") + "; " + range.start + "–" + range.end + " is " + want +
+               (countOk ? (n > want ? " (plus " + (n - want) + " extra, likely a cover sheet)" : "") : " — check it's the whole article and only this article");
+      } else {
+        state = startSeen ? "ok" : "mid";
+        note = "PDF has " + n + " page" + (n === 1 ? "" : "s");
+      }
+      note += startSeen ? "; page number " + range.start + " appears" : "; page number " + range.start + " not seen";
+      rows.push({ part:"Pages", state, note });
+    }
+
+    // DOI printed on the page
+    let doiState = "na";
+    const doi = String(b.doi || findDOI(request) || "").toLowerCase();
+    const compact = raw.toLowerCase().replace(/\s+/g, "");
+    const printed = [...new Set((raw.match(/10\.\d{4,9}\/[^\s"<>]+/g) || []).map(d => d.toLowerCase().replace(/[.,;)\]]+$/, "")))];
+    if (doi && compact.includes(doi)){ doiState = "ok"; rows.push({ part:"DOI", state:"ok", note:"matches" }); }
+    else if (doi && printed.length){ doiState = "bad"; rows.push({ part:"DOI", state:"bad", note:"page shows " + printed[0].slice(0, 60) + ", expected " + doi }); }
+    else if (doi) rows.push({ part:"DOI", state:"na", note:"not printed " + pageLabel });
+
+    // Journal and year (informational: headers often abbreviate the journal)
+    const journal = b.container || q.container || "";
+    if (journal && q.kind !== "book"){
+      const cov = Math.max(coverage(journal) || 0, coverage(mainTitleOf(journal)) || 0);   // "Critical Arts: A South-North Journal…" -> "Critical Arts"
+      rows.push({ part:"Journal", state: cov >= 0.8 ? "ok" : "na", note: cov >= 0.8 ? "found" : "not found (may be abbreviated or only on other pages)" });
+    }
+    const year = b.year || q.year;
+    if (year) rows.push({ part:"Year", state: wordSet.has(String(year)) ? "ok" : "na", note: wordSet.has(String(year)) ? String(year) + " appears" : String(year) + " not seen" });
+
+    const verdict = (titleState === "bad" || doiState === "bad" || authState === "bad") ? "bad"
+                  : (titleState === "ok" && (authState === "ok" || authState === "na")) ? "ok"
+                  : (titleState === "na" && authState === "na" && doiState === "na") ? "none" : "mid";
+    return { verdict, rows };
+  }
+  function firstPageCheck(res, pdf){
+    const one = checkPdfText(res, pdf, pdf.pages[0] || "", "on page 1");
+    if (one.verdict === "ok" || pdf.pages.length < 2) return one;
+    // Page 1 may be a cover sheet (JSTOR, repositories): try pages 1 and 2 together
+    const two = checkPdfText(res, pdf, (pdf.pages[0] || "") + "\n" + pdf.pages[1], "on pages 1–2");
+    const rank = { ok:3, mid:2, none:1, bad:0 };
+    return rank[two.verdict] > rank[one.verdict] ? two : one;
+  }
+  const FP_MARK = { ok:"✓", mid:"!", bad:"✗", na:"–" };
+  function fpRowsHtml(rows){
+    return rows.map(r => '<div class="fp-row"><span class="fp-mark ' + r.state + '">' + FP_MARK[r.state] + "</span><b>" + esc(r.part) + '</b> <span class="pct">' + esc(r.note) + "</span></div>").join("");
+  }
+  // Verdict for the badge, combining the publisher-page check (f.warn) and the first-page check
+  function reviewBadge(f, fp){
+    // A first page that matches outweighs a loosely matching page title, but not a different page DOI
+    if (f.doiBad || (fp && fp.verdict === "bad")) return ["Low", "Check carefully"];
+    if (fp && fp.verdict === "ok") return ["High", "Looks right"];
+    if (f.warn) return ["Low", "Check carefully"];
+    if (fp && fp.verdict === "mid") return ["Medium", "Partly matches"];
+    return f.hasPageChecks ? ["High", "Page matches"] : ["Medium", "Not checked"];
+  }
+  async function runFirstPageCheck(res, f){
+    const box = $("fp-check");
+    const still = () => { const b = $("fp-check"); return b && b.dataset.path === f.path ? b : null; };
+    let fp = null, err = "";
+    try {
+      const r = String(await bridgeCall("ReadPdf", f.path) || "");
+      if (!r.startsWith("OK\n")) throw new Error(r.replace(/^ERR\s*/, "") || "couldn't read the PDF");
+      const lib = await loadPdfJs();
+      const doc = await lib.getDocument({ data: base64Bytes(r.slice(3)), isEvalSupported: false }).promise;
+      const pdf = await readPdfStart(doc);
+      fp = firstPageCheck(res, pdf);
+      renderPdfPages(doc, f).catch(() => {});   // keep the browser viewer if drawing fails
+    } catch(e){ err = e && e.message ? e.message : String(e); }
+    const el = still(); if (!el) return;      // the user already saved or tried again
+    if (!fp && /\bgone\b/i.test(err)){         // a held PDF from before leaving the page was cleaned up
+      dropReview(f.tn);
+      $("pdf-status").innerHTML = '<div class="pct">The PDF held for review earlier is no longer there. Click Fetch PDF to download it again.</div>';
+      const fb = $("fetch-pdf"); if (fb) fb.disabled = false;
+      return;
+    }
+    f.fp = fp;
+    const [cls, label] = reviewBadge(f, fp);
+    const badge = $("review-badge"); if (badge){ badge.className = "badge " + cls; badge.textContent = label; }
+    const pageWarn = $("page-warn"); if (pageWarn && cls !== "Low") pageWarn.remove();
+    if (fp){
+      el.innerHTML = '<div class="pct" style="margin-bottom:4px">First page compared with the citation:</div>' + fpRowsHtml(fp.rows);
+      if (fp.verdict === "bad") el.innerHTML += '<p style="margin:6px 0 0">This may be the wrong PDF. Look at the first page before saving, or click Try again.</p>';
+    } else {
+      el.innerHTML = '<div class="pct">Couldn\'t read the first page (' + esc(err) + "). Check it by eye in the viewer.</div>";
+    }
+  }
+
+  function showReview(res, auto, f){
+    const st = $("pdf-status"), btn = $("fetch-pdf");
+    f.hasPageChecks = /page (DOI|title)/.test(f.checks);
+    holdReview(f);
+    st.innerHTML =
+      (auto ? '<div class="pct" style="margin-bottom:6px">Fetched automatically (citation confidence: ' + esc(res.confidence || "unknown") + "). Nothing is saved until you choose." +
+              (res.confidence !== "High" ? " The citation isn't fully verified, so compare the first page carefully." : "") + "</div>" : "") +
+      '<div class="review-head"><span id="review-badge" class="badge ' + (f.warn ? "Low" : "Medium") + '">' + (f.warn ? "Check carefully" : "Checking…") + '</span> <strong>Review before saving</strong></div>' +
+      '<div class="pct" style="margin:6px 0 6px">' + f.checks + "</div>" +
+      '<div id="fp-check" class="fp-check" data-path="' + esc(f.path) + '"><div class="progress"><span class="spin"></span>Reading the first page…</div></div>' +
+      (f.warn ? '<p id="page-warn" style="margin:0 0 10px">The publisher page may be a different article. Check the title and authors on the first page.</p>' : "") +
+      '<div class="pdfframe" id="pdf-frame" data-path="' + esc(f.path) + '"><iframe id="pdf-view" title="Fetched PDF" src="' + esc(pdfViewerSrc(f.path)) + '"></iframe></div>' +
+      '<div class="review-actions">' +
+        '<button type="button" class="primary" id="pdf-save">Save as ' + esc(f.tn) + '.pdf</button>' +
+        '<button type="button" id="pdf-retry" title="Discard this PDF and fetch again a different way">Try again</button>' +
+        '<button type="button" id="pdf-tab">Open in PDF Preview tab</button>' +
+        '<span class="pct" id="viewer-hint">If the viewer stays blank, use the PDF Preview tab.</span>' +
+      "</div>" +
+      '<div id="review-msg" class="pct" style="margin-top:8px"></div>';
+    const msg = $("review-msg");
+    const busy = on => ["pdf-save","pdf-retry","pdf-tab"].forEach(id => { const e = $(id); if (e) e.disabled = on; });
+    $("pdf-save").onclick = async () => {
+      busy(true);
+      let r = "";
+      try { r = String(await bridgeCall("ApprovePdf", f.path, f.tn) || ""); } catch(e){ r = "ERR\n" + e.message; }
+      const [k, v] = r.split("\n");
+      if (k === "OK"){
+        st.innerHTML = '<span class="badge High">Saved</span> <button type="button" data-copy="' + esc(v) + '" title="Copy file path">' + esc(v) + "</button>" +
+                       '<div class="pct" style="margin-top:6px">' + f.checks + "</div>" +
+                       (f.fp ? '<div class="fp-check" style="margin-top:6px">' + fpRowsHtml(f.fp.rows) + "</div>" : "");
+        wireCopy(st);
+        summary += "\nPDF saved after review: " + v;
+        dropReview(f.tn);
+      } else { msg.textContent = "Couldn't save: " + (v || "unknown error"); busy(false); }
+    };
+    // Try again: discard this PDF, then fetch again skipping the way that produced it
+    $("pdf-retry").onclick = async () => {
+      busy(true);
+      let r = "";
+      try { r = String(await bridgeCall("DiscardPdf", f.path) || ""); } catch(e){ r = "ERR\n" + e.message; }
+      if (!r.startsWith("OK")){ msg.textContent = "Couldn't discard this PDF: " + r.replace(/^ERR\s*/, ""); busy(false); return; }
+      dropReview(f.tn);
+      const skip = [f.skip, f.route].filter(Boolean).join(",");
+      await doFetch(res, false, skip || "first");
+    };
+    $("pdf-tab").onclick = async () => {
+      let r = "";
+      try { r = String(await bridgeCall("PreviewPdf", f.path) || ""); } catch(e){ r = "ERR\n" + e.message; }
+      msg.textContent = r.startsWith("OK") ? "Opened in the PDF Preview tab at the top of the request." : "Couldn't open it: " + r.replace(/^ERR\s*/, "");
+    };
+    runFirstPageCheck(res, f);
+  }
+
+  /* Automatic fetch: only on the first check after the tab opens, only when there
+     is a DOI or free copy to fetch, and never twice for the same TN (skipped if
+     TN.pdf is already saved). With review on (ReviewPdfBeforeSave) it runs at any
+     confidence, since nothing is saved until staff click Save. With review off
+     the PDF would be saved straight away, so it still waits for High confidence. */
+  /* A PDF held for review is remembered for this tab (sessionStorage), so leaving
+     the checker for another website and coming back shows it again instead of
+     fetching a second copy. */
+  const REVIEW_KEY = tn => "illcheck-review-" + tn;
+  function holdReview(f){
+    try { sessionStorage.setItem(REVIEW_KEY(f.tn), JSON.stringify({ path:f.path, checks:f.checks, warn:f.warn, doiBad:f.doiBad, tn:f.tn, doi:f.doi, route:f.route, skip:f.skip })); } catch(e){}
+  }
+  function dropReview(tn){ try { sessionStorage.removeItem(REVIEW_KEY(tn)); } catch(e){} }
+  function heldReview(tn){ try { return JSON.parse(sessionStorage.getItem(REVIEW_KEY(tn)) || "null"); } catch(e){ return null; } }
+
+  /* ---------- Citation box ----------
+     The verified citation goes to StrategyAgent.lua, which shows it in a box
+     on any website opened from this page (never on this page itself). */
+  function citationBoxText(res){
+    const b = res.best || {}, q = res.q || reqView(request);
+    const trusted = !!res.best && (res.confidence === "High" || res.confidence === "Medium");
+    const u = trusted ? b : {};
+    const L = [];
+    const add = (k, v) => { v = Array.isArray(v) ? v.filter(Boolean).join("; ") : v;
+      if (v !== undefined && v !== null && String(v).trim()) L.push(k + "\t" + String(v).replace(/[\t\r\n]+/g, " ").trim()); };
+    add("TN", request.TransactionNumber);
+    add("Status", trusted ? "Verified against " + (b.source || "the databases") + " (confidence " + res.confidence + ")"
+                          : "As requested - not verified (confidence " + (res.confidence || "unknown") + ")");
+    add("Title", [u.title, u.subtitle].filter(Boolean).join(": ") || q.title);
+    add(u.editors ? "Editor" : "Author", (u.authors && u.authors.length) ? u.authors.slice(0, 6) : q.author);
+    if (q.kind === "book"){
+      add("Publisher", u.publisher || q.publisher); add("Edition", q.edition); add("Year", u.year || q.year);
+      add("ISBN", (u.isbn || [])[0] || findISBNs(request)[0]);
+    } else {
+      add(q.kind === "chapter" ? "Book" : "Journal", u.container || q.container);
+      if (q.kind === "chapter") add("Book author", q.bookAuthor);
+      add("Volume", u.volume || q.volume); add("Issue", u.issue || q.issue); add("Year", u.year || q.year);
+      add("Pages", u.pages || q.pages); add("ISSN", [].concat(u.issn || [])[0] || findISSN(request));
+    }
+    add("DOI", u.doi || findDOI(request));
+    return L.join("\n");
+  }
+  function sendCitation(res){
+    const text = citationBoxText(res);
+    window.__citationBoxText = text;
+    if (hasBridge()) bridgeCall("SetCitation", text).catch(() => {});
+  }
+  function hasBridge(){ return !!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects) && !window.__illPreview; }
+
+  // Inside ILLiad, links open in this tab (not a popup) so the citation box can follow
+  document.addEventListener("click", e => {
+    const a = e.target && e.target.closest && e.target.closest('a[href^="http"]');
+    if (!a || e.defaultPrevented || e.ctrlKey || e.shiftKey || e.metaKey || e.button !== 0) return;
+    if (window.__illPreview && window.__illPreviewOpen){ e.preventDefault(); window.__illPreviewOpen(a.href); return; }
+    if (!hasBridge()) return;
+    e.preventDefault();
+    location.href = a.href;
+  }, true);
+
+  async function maybeAutoFetch(res){
+    const b = res.best || {};
+    const tn = String(request.TransactionNumber || "").trim();
+    const held = tn && heldReview(tn);
+    if (held && held.path && $("pdf-status")){
+      const fb = $("fetch-pdf"); if (fb) fb.disabled = true;
+      return showReview(res, false, held);
+    }
+    // Auto-fetch once per request per tab: coming back from another website doesn't fetch again
+    let done = false;
+    try { done = sessionStorage.getItem("illcheck-autofetched-" + tn) === "1"; } catch(e){}
+    if (done) return;
+    const hasSource = !!(b.doi || findDOI(request) || (res.oa && res.oa.url) || cfg.eds || (res.almaLinks || []).length);
+    if (!cfg.autoPdf || !hasSource || !tn || !$("fetch-pdf")) return;
+    if (!cfg.review && res.confidence !== "High") return;
+    if (!(window.chrome && window.chrome.webview && window.chrome.webview.hostObjects)) return;
+    let existing = "";
+    try { existing = String(await bridgeCall("PdfExists", tn) || ""); } catch(e){}
+    if (existing){
+      $("pdf-status").innerHTML = '<span class="badge Medium">Already saved</span> <button type="button" data-copy="' + esc(existing) + '" title="Copy file path">' + esc(existing) +
+        '</button><div class="pct" style="margin-top:6px">Not fetched again automatically. Click Fetch PDF to download another copy.</div>';
+      $("pdf-status").querySelectorAll("[data-copy]").forEach(x => x.onclick = async () => { try { await navigator.clipboard.writeText(x.dataset.copy); } catch(e){} });
+      return;
+    }
+    try { sessionStorage.setItem("illcheck-autofetched-" + tn, "1"); } catch(e){}
+    await doFetch(res, true);
+  }
+
+
+  async function loadAccess(res){
+    const card = $("access-card"); if (!card) return;
+    const log = (label, ok) => { const d = out.querySelector("details.card"); if (d) d.insertAdjacentHTML("beforeend", "<div>" + (ok ? "✓ " : "✗ ") + esc(label) + "</div>"); };
+    let a;
+    try { a = await almaAccess(request, res, log); }
+    catch(e){ card.innerHTML = '<h2>Bowdoin access</h2><p class="modetag" style="margin:0">' + esc(e.message) + "</p>"; return; }
+    const year = (res.best && res.best.year) || res.q.year;
+    const onlineYes = a.online.filter(o => o.available), onlineNo = a.online.filter(o => !o.available);
+    // Verified full-text services (cover this item, not filtered out) with a link, in Alma's order: Fetch PDF tries these first
+    res.almaLinks = onlineYes.filter(o => /^https?:/i.test(o.url || "")).map(o => [o.name, o.url]);
+    let badge, label;
+    if (onlineYes.length){ badge = "High"; label = "Online access" + (year ? " for " + year : ""); }
+    else if (a.print.length || a.digital.length){ badge = "Medium"; label = a.print.length ? "Print only" : "Digital copy only"; }
+    else { badge = "None"; label = "No access found" + (year ? " for " + year : ""); }
+    let h = '<h2>Bowdoin access <span class="modetag">from Alma link resolver</span></h2><span class="badge ' + badge + '">' + esc(label) + '</span><ul class="acc">';
+    for (const o of onlineYes) h += '<li><span class="mark">✓</span><span><strong>' + esc(o.name) + "</strong>" + (o.coverage ? " · " + esc(o.coverage) : "") + (o.free ? " · free" : "") + (o.url ? " · " + link(o.url, "Open") : "") + (o.note ? '<br><span class="pct">' + esc(o.note) + "</span>" : "") + "</span></li>";
+    for (const d of a.digital) h += '<li><span class="mark">✓</span><span><strong>' + esc(d.name) + "</strong> · digital copy" + (d.url ? " · " + link(d.url, "Open") : "") + "</span></li>";
+    for (const p of a.print) h += '<li><span class="mark">▪</span><span>Print: ' + esc([p.library, p.location, p.call, p.status].filter(Boolean).join(" · ") || "holding record") + "</span></li>";
+    for (const o of onlineNo) h += '<li class="off"><span class="mark">✗</span><span>' + esc(o.name) + (o.coverage ? " · " + esc(o.coverage) : "") + " · doesn't cover this item" + (o.reason ? " (" + esc(o.reason) + ")" : "") + "</span></li>";
+    if (!a.online.length && !a.print.length && !a.digital.length) h += '<li class="off"><span class="mark">✗</span><span>The resolver returned no online or print services for this citation.</span></li>';
+    h += "</ul>";
+    if (a.license.length) h += '<p style="margin:10px 0 0"><strong>License terms:</strong> ' + esc(a.license.join(" · ")) + "</p>";
+    h += '<p class="modetag" style="margin:10px 0 0">' + link(a.pageURL, "Open full resolver page") + " · " + esc(new URL(a.base).host) +
+         (/\/view\/uresolver\//.test(cfg.alma) ? "" : " (found automatically; save it as AlmaResolverURL in Manage Addons)") + "</p>";
+    h += '<details style="margin-top:8px"><summary>Resolver details</summary><div class="pct" style="margin-top:6px">' +
+         a.services.map(s => esc(s.type + ": " + Object.entries(s.keys).map(([k,v]) => k + "=" + stripTags(v).slice(0,80)).join(", "))).join("<br>") + "</div></details>";
+    card.innerHTML = h;
+    summary += "\nBowdoin access: " + label + (onlineYes.length ? " (" + onlineYes.map(o => o.name + (o.coverage ? ", " + o.coverage : "")).join("; ") + ")" : "");
+  }
+
+
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const link = (href, text) => '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(text || href) + '</a>';
+
+  function renderFields(){
+    $("fields").innerHTML = Object.entries(request).map(([k,v]) => "<dt>" + esc(LABELS[k]||k) + "</dt><dd>" + esc(v) + "</dd>").join("");
+    const q = reqView(request);
+    $("meta").textContent = (inIlliad ? "TN " + (request.TransactionNumber || "?") : "Test mode") + " · " + q.kind;
+  }
+
+  async function check(override){
+    $("run").disabled = true; $("copy").disabled = true;
+    out.innerHTML = "";
+    if (!inIlliad) out.insertAdjacentHTML("beforeend", '<div class="banner">Test mode: opened outside ILLiad, so a sample request is loaded. Pick another sample at the top.</div>');
+    const prog = document.createElement("div"); prog.className = "card progress";
+    prog.innerHTML = '<div><span class="spin"></span>Checking free databases…</div>'; out.appendChild(prog);
+    const log = (label, ok) => prog.insertAdjacentHTML("beforeend", "<div>" + (ok ? "✓ " : "✗ ") + esc(label) + "</div>");
+    try {
+      const res = await lookUp(request, log, override);
+      prog.querySelector(".spin").parentElement.remove();
+      (mode === "eresource" ? renderEResource : render)(res);
+      const d = document.createElement("details"); d.className = "card"; d.innerHTML = "<summary>Searches run</summary>"; d.append(...prog.childNodes); prog.replaceWith(d);
+    } catch(e){
+      out.insertAdjacentHTML("beforeend", '<div class="banner err">Something went wrong: ' + esc(e.message) + '. Check this PC can reach api.crossref.org, api.openalex.org and openlibrary.org.</div>');
+    }
+    $("run").disabled = false;
+  }
+
+  function render(res){
+    const rows = compareFields(request, res);
+    const steps = buildStrategy(request, res, rows);
+    const b = res.best;
+    summary = summaryText(request, res, rows, steps);
+    $("copy").disabled = false;
+
+    let h = verdictCard(res);
+
+    if (res.oa && res.oa.url) h += '<div class="card oa"><h2>Free copy found</h2>' + link(res.oa.url) + '<div class="ids">' + esc([res.oa.version, res.oa.host, res.oa.license].filter(Boolean).join(" · ")) + "</div></div>";
+    else if (b && b.doi && !cfg.email) h += '<div class="card"><h2>Free copy</h2>No open-access link in OpenAlex. Add a ContactEmail in the addon settings to also check Unpaywall.</div>';
+
+    h += compareCard(res, rows);
+
+    h += '<div class="card"><h2>Suggested strategy</h2><ol class="steps">' +
+         steps.map(s => "<li>" + esc(s.text) + (s.why ? "<small>" + (/^https?:/.test(s.why) ? link(s.why) : esc(s.why)) + "</small>" : "") + "</li>").join("") + "</ol></div>";
+
+    h += '<div class="card"><h2>Search links</h2><div class="links">' + searchLinks(request, res).map(([t,u]) => link(u,t)).join("") + "</div></div>";
+
+    h += othersCard(res);
+    out.insertAdjacentHTML("beforeend", h);
+    wireOthers(res, render);
+    sendCitation(res);
+  }
+
+  for (const b of document.querySelectorAll(".modes button")) b.onclick = () => { setMode(b.dataset.mode, false); start(); };
+  $("run").onclick = () => check();
+  $("copy").onclick = async () => {
+    const btn = $("copy");
+    try { await navigator.clipboard.writeText(summary); btn.textContent = "Copied"; }
+    catch(e){ const t = document.createElement("textarea"); t.value = summary; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); btn.textContent = "Copied"; } catch(_){} t.remove(); }
+    setTimeout(() => btn.textContent = "Copy summary", 1800);
+  };
+  window.addEventListener("error", e => out.insertAdjacentHTML("beforeend", '<div class="banner err">Page error: ' + esc(e.message) + "</div>"));
+
+  if (!inIlliad){
+    const sel = $("sample"); sel.hidden = false;
+    sel.innerHTML = Object.keys(SAMPLES).map(k => "<option>" + esc(k) + "</option>").join("");
+    sel.onchange = () => { request = { ...SAMPLES[sel.value] }; renderFields(); setMode(detectMode(request), true); start(); };
+    request = { ...SAMPLES[sel.value] };
+  }
+  renderFields();
+  setMode(cfg.mode === "eresource" || cfg.mode === "borrowing" ? cfg.mode : detectMode(request), true);
+  start();
+})();
+
+if (typeof module !== "undefined") module.exports = { primoOpenURL, parseAlmaCTO, almaCandidates, almaAccess, fieldConfidence, openURL, eHoldingsLinks, eSummary, detectMode, lookUp, similarity, scoreCandidate, reqView, compareFields, buildStrategy, mergeCandidates, confidenceOf, pageRange, findISBNs, findISSN, findDOI, searchLinks, summaryText, citationLine, SAMPLES, RULES, cfg };
+</script>
+</body>
+</html>
