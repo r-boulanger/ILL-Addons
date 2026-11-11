@@ -216,7 +216,10 @@ end
 
 -- Called by verify.html through the bridge with the verified citation
 function SetCitation(text)
-  if text ~= nil and tostring(text) ~= "" then citationText = tostring(text) end
+  if text ~= nil and tostring(text) ~= "" then
+    citationText = tostring(text)
+    RefreshBoxScript()
+  end
   return "OK"
 end
 
@@ -225,36 +228,37 @@ local function OnChecker(addr)
   return addr == "" or string.sub(addr, 1, 5) == "file:" or string.sub(addr, 1, 6) == "about:" or string.find(addr, "verify.html", 1, true) ~= nil
 end
 
--- Page-handler test: true on a website (not the checker) that has no box yet
-function CitationBoxNeeded()
-  local ok, need = pcall(function()
-    if citationText == "" then return false end
-    if OnChecker(agentForm.Browser.Address) then return false end
-    local r = agentForm.Browser:EvaluateScript("(function(){return !!(document.body && !document.getElementById('illcheck-cite-host'));})()")
-    if r == nil or not r.Success then return false end
-    local v = string.lower(tostring(r.Result))
-    return v == "true" or v == "1"
-  end)
-  return ok and need == true
-end
-
+-- The box itself. Called as (text, minimized). Safe to run more than once on a
+-- page: a second run replaces the box (new citation text) and keeps its spot.
+-- It lives in a shadow root on <html> (not <body>, which some sites replace),
+-- and puts itself back if the page's own scripts remove it.
 local CITATION_BOX_SCRIPT = [[
-(function (text) {
-  if (document.getElementById('illcheck-cite-host')) { return 'exists'; }
+(function (text, minimized) {
+  if (window.top !== window) { return 'frame'; }
+  var proto = String(location.protocol || '');
+  if (proto !== 'http:' && proto !== 'https:') { return 'skip'; }
+  var old = document.getElementById('illcheck-cite-host');
+  var keepPos = old ? { left: old.style.left, top: old.style.top, right: old.style.right } : null;
+  if (typeof window.__illcheckMin === 'boolean') { minimized = window.__illcheckMin; }
+  window.__illcheckMin = !!minimized;
+  if (old) { old.remove(); }
   var rows = String(text || '').split('\n').map(function (l) { var i = l.indexOf('\t'); return i > 0 ? [l.slice(0, i), l.slice(i + 1)] : null; })
     .filter(function (r) { return r && r[1]; });
   var tn = '', all = [];
   rows.forEach(function (r) { if (r[0] === 'TN') { tn = r[1]; } if (r[0] !== 'Status') { all.push(r[0] + ': ' + r[1]); } });
   var host = document.createElement('div');
   host.id = 'illcheck-cite-host';
-  host.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;';
+  host.setAttribute('data-illcheck', '1');
+  host.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;display:block;';
+  if (keepPos) { host.style.left = keepPos.left; host.style.top = keepPos.top || '12px'; host.style.right = keepPos.right; }
   var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
   var css = document.createElement('style');
   css.textContent =
-    '.box{width:330px;max-width:calc(100vw - 24px);background:#000;color:#fff;border:1px solid #333a42;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.45);font:13px/1.4 "Segoe UI",system-ui,sans-serif}' +
+    ':host{all:initial}' +
+    '.box{width:330px;max-width:calc(100vw - 24px);background:#000;color:#fff;border:1px solid #333a42;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.45);font:13px/1.4 "Segoe UI",system-ui,sans-serif;text-align:left}' +
     '.hd{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #333a42;cursor:move;user-select:none}' +
     '.hd b{font-size:13px}.hd .tn{color:#a3adb8;font-size:12px;flex:1}' +
-    '.box.min .bd{display:none}.box.min .hd{border-bottom:0}' +
+    '.box.min{width:auto}.box.min .bd{display:none}.box.min .hd{border-bottom:0}' +
     '.bd{max-height:60vh;overflow:auto;padding:6px 10px 10px}' +
     '.st{color:#a3adb8;font-size:11px;margin:2px 0 6px}' +
     '.r{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #161a1f}.r:last-of-type{border-bottom:0}' +
@@ -270,7 +274,7 @@ local CITATION_BOX_SCRIPT = [[
   var hd = document.createElement('div'); hd.className = 'hd';
   var title = document.createElement('b'); title.textContent = 'Citation';
   var tnEl = document.createElement('span'); tnEl.className = 'tn'; tnEl.textContent = tn ? 'TN ' + tn : '';
-  var minBtn = document.createElement('button'); minBtn.type = 'button'; minBtn.title = 'Collapse'; minBtn.textContent = '\u2013';
+  var minBtn = document.createElement('button'); minBtn.type = 'button';
   hd.appendChild(title); hd.appendChild(tnEl); hd.appendChild(minBtn);
   var bd = document.createElement('div'); bd.className = 'bd';
   function copy(t, el) {
@@ -298,11 +302,15 @@ local CITATION_BOX_SCRIPT = [[
   ft.appendChild(back); ft.appendChild(allBtn);
   bd.appendChild(ft); bd.appendChild(note);
   box.appendChild(hd); box.appendChild(bd); root.appendChild(box);
-  try { if (sessionStorage.getItem('illcheck-cite-min') === '1') { box.classList.add('min'); minBtn.textContent = '+'; } } catch (e) { }
-  minBtn.onclick = function () {
-    var min = box.classList.toggle('min'); minBtn.textContent = min ? '+' : '\u2013'; minBtn.title = min ? 'Expand' : 'Collapse';
-    try { sessionStorage.setItem('illcheck-cite-min', min ? '1' : '0'); } catch (e) { }
-  };
+  function setMin(min, tell) {
+    window.__illcheckMin = min;
+    box.classList.toggle('min', min);
+    minBtn.textContent = min ? '+' : '\u2013'; minBtn.title = min ? 'Expand' : 'Minimize';
+    // tell the addon, so the next website opens the box the same way
+    if (tell) { try { window.chrome.webview.postMessage('illcheck-min:' + (min ? '1' : '0')); } catch (e) { } }
+  }
+  setMin(!!minimized, false);
+  minBtn.onclick = function () { setMin(!box.classList.contains('min'), true); };
   hd.addEventListener('mousedown', function (e) {
     if (e.target === minBtn) { return; }
     var r = host.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
@@ -310,16 +318,118 @@ local CITATION_BOX_SCRIPT = [[
     function up() { document.removeEventListener('mousemove', mv, true); document.removeEventListener('mouseup', up, true); }
     document.addEventListener('mousemove', mv, true); document.addEventListener('mouseup', up, true); e.preventDefault();
   });
-  (document.body || document.documentElement).appendChild(host);
+  function attach() {
+    var parent = document.documentElement || document.body;
+    if (parent && !host.isConnected) { parent.appendChild(host); }
+  }
+  attach();
+  // Sites that rebuild the page (or wipe <body>) would remove the box: put it back.
+  if (window.__illcheckKeep) { clearInterval(window.__illcheckKeep); }
+  window.__illcheckKeep = setInterval(function () {
+    if (document.getElementById('illcheck-cite-host') !== host) {
+      var other = document.getElementById('illcheck-cite-host');
+      if (other && other !== host) { clearInterval(window.__illcheckKeep); return; }   // a newer box took over
+      attach();
+    }
+  }, 1000);
+  try {
+    if (window.__illcheckObs) { window.__illcheckObs.disconnect(); }
+    window.__illcheckObs = new MutationObserver(function () { if (!host.isConnected) { attach(); } });
+    window.__illcheckObs.observe(document, { childList: true, subtree: true });
+  } catch (e) { }
   return 'ok';
 })
 ]]
+
+local function JsString(s)
+  s = tostring(s or "")
+  s = string.gsub(s, "\\", "\\\\")
+  s = string.gsub(s, "\"", "\\\"")
+  s = string.gsub(s, "\r", "\\r")
+  s = string.gsub(s, "\n", "\\n")
+  s = string.gsub(s, "\t", "\\t")
+  s = string.gsub(s, "</", "<\\/")
+  return "\"" .. s .. "\""
+end
+
+-- ---------- Keeping the box on every page ----------
+-- Main route: WebView2 runs a registered script on every new page in this tab
+-- (AddScriptToExecuteOnDocumentCreated), so the box doesn't depend on ILLiad
+-- noticing each page load. The script is re-registered when the citation or the
+-- minimized setting changes. Fallback (no WebView2): ILLiad's page handler.
+local boxState = { minimized = false, ids = {}, tasks = {}, hooked = false }
+
+local function MainCore()
+  local core = nil
+  pcall(function() core = agentForm.Browser.WebBrowser.CoreWebView2 end)
+  return core
+end
+
+local function BoxBootstrap()
+  return "(function(){var run=function(){try{(" .. CITATION_BOX_SCRIPT .. ")(" .. JsString(citationText) .. "," ..
+    (boxState.minimized and "true" or "false") .. ");}catch(e){}};" ..
+    "if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',run);}else{run();}" ..
+    "window.addEventListener('load',function(){if(!document.getElementById('illcheck-cite-host')){run();}});})();"
+end
+
+-- Registers the current box script for future pages (and drops older versions)
+function RefreshBoxScript()
+  local core = MainCore()
+  if core == nil or citationText == "" then return false end
+  local ok, err = pcall(function()
+    -- collect ids of earlier registrations that have finished, then remove them all
+    local pending = {}
+    for _, t in ipairs(boxState.tasks) do
+      local done, id = pcall(function() if t.IsCompleted then return tostring(t.Result) end return nil end)
+      if done and id ~= nil then table.insert(boxState.ids, id) else table.insert(pending, t) end
+    end
+    boxState.tasks = pending
+    for _, id in ipairs(boxState.ids) do pcall(function() core:RemoveScriptToExecuteOnDocumentCreated(id) end) end
+    boxState.ids = {}
+    table.insert(boxState.tasks, core:AddScriptToExecuteOnDocumentCreatedAsync(BoxBootstrap()))
+    if not boxState.hooked then
+      core.WebMessageReceived:Add(function(sender, args) OnBoxMessage(args) end)
+      boxState.hooked = true
+    end
+  end)
+  if not ok then Log("citation box script: " .. ErrorText(err)) end
+  return ok
+end
+
+-- The box's minimize button reports here, so the next website opens it the same way
+function OnBoxMessage(args)
+  pcall(function()
+    local msg = tostring(args:TryGetWebMessageAsString() or "")
+    local v = string.match(msg, "^illcheck%-min:([01])$")
+    if v == nil then return end
+    local min = (v == "1")
+    if min ~= boxState.minimized then
+      boxState.minimized = min
+      RefreshBoxScript()
+    end
+  end)
+end
+
+-- Page-handler test (fallback, and for the page currently shown): true on a
+-- website (not the checker) that has no box yet
+function CitationBoxNeeded()
+  local ok, need = pcall(function()
+    if citationText == "" then return false end
+    if not boxState.hooked then RefreshBoxScript() end       -- WebView2 may only now be ready
+    if OnChecker(agentForm.Browser.Address) then return false end
+    local r = agentForm.Browser:EvaluateScript("(function(){return !!((document.documentElement||document.body) && !document.getElementById('illcheck-cite-host'));})()")
+    if r == nil or not r.Success then return false end
+    local v = string.lower(tostring(r.Result))
+    return v == "true" or v == "1"
+  end)
+  return ok and need == true
+end
 
 -- Page handler: puts the box on the page
 function ShowCitationBox()
   local ok, err = pcall(function()
     if OnChecker(agentForm.Browser.Address) then return end
-    agentForm.Browser:ExecuteScript(CITATION_BOX_SCRIPT, { citationText })
+    agentForm.Browser:ExecuteScript(CITATION_BOX_SCRIPT, { citationText, boxState.minimized })
   end)
   if not ok then Log("citation box: " .. ErrorText(err)) end
 end
@@ -381,7 +491,8 @@ local function Setup()
     local okH, errH = pcall(function()
       agentForm.Browser:RegisterPageHandler("custom", "CitationBoxNeeded", "ShowCitationBox", true)
     end)
-    if not okH then Log("citation box skipped: " .. ErrorText(errH)) end
+    if not okH then Log("citation box page handler skipped: " .. ErrorText(errH)) end
+    RefreshBoxScript()                                   -- may be too early; CitationBoxNeeded retries
   end
 
   Step("show form")
@@ -585,6 +696,11 @@ local function DownloadPdf(url, cookies, referer)
     ms:Close()
     return nil, "the site returned a web page instead of a PDF (often a login or 'verify you are human' check)", finalUrl
   end
+  if IsPreviewPdfUrl(finalUrl) then
+    -- Brill sends the short preview instead when it doesn't see full-text access
+    ms:Close()
+    return nil, "the site sent only its free preview pages, not the full text (it may not see Bowdoin's access for this item)", finalUrl
+  end
   return ms, length, finalUrl
 end
 
@@ -762,16 +878,71 @@ function PdfExists(tn)
 end
 
 -- ---------- Site rules ----------
--- Brill: chapter pages are unreliable, but the PDF address follows a fixed pattern:
---   https://brill.com/display/book/<ISBN>/<ID>.xml  ->  https://brill.com/downloadpdf/book/<ISBN>/<ID>.pdf
---   (also /view/..., and edited volumes /book/edcoll/...)
-function BrillPdfUrl(url)
+-- Brill: the full text is at /downloadpdf/..., the address behind the "Download PDF"
+-- button. Brill's article pages list /previewpdf/... (only the first page or two)
+-- as their PDF, so that address is never used: it is swapped for /downloadpdf/.
+--   https://brill.com/view/journals/<j>/<v>/<i>/article-p27_3.xml -> https://brill.com/downloadpdf/journals/<j>/<v>/<i>/article-p27_3.pdf
+--   https://brill.com/display/book/<ISBN>/<ID>.xml                 -> https://brill.com/downloadpdf/book/<ISBN>/<ID>.pdf
+--   https://brill.com/previewpdf/journals/...                       -> https://brill.com/downloadpdf/journals/...
+-- Returns the full-text addresses to try (the .pdf form, then the .xml form), or nil.
+function IsPreviewPdfUrl(u)
+  return string.find(string.lower(tostring(u or "")), "/previewpdf/", 1, true) ~= nil
+end
+
+function BrillPdfUrls(url)
   url = tostring(url or "")
   local base, path = string.match(url, "^(https?://[%w%.%-]*brill%.com)(/[^?#]*)")
   if base == nil then return nil end
-  local rest = string.match(path, "^/display(/book/.+)%.xml$") or string.match(path, "^/view(/book/.+)%.xml$")
+  local prev = string.match(path, "^/previewpdf(/.+)$")
+  if prev ~= nil then path = "/downloadpdf" .. prev end
+  local rest = string.match(path, "^/downloadpdf(/.+)%.pdf$") or string.match(path, "^/downloadpdf(/.+)%.xml$")
+    or string.match(path, "^/display(/.+)%.xml$") or string.match(path, "^/view(/.+)%.xml$")
   if rest == nil then return nil end
-  return base .. "/downloadpdf" .. rest .. ".pdf"
+  return { base .. "/downloadpdf" .. rest .. ".pdf", base .. "/downloadpdf" .. rest .. ".xml" }
+end
+
+function BrillPdfUrl(url)
+  local list = BrillPdfUrls(url)
+  return list and list[1] or nil
+end
+
+-- The "Download PDF" button's address on a Brill page, if the page has one
+function BrillButtonLink(html, pageUrl)
+  local Uri = luanet.import_type("System.Uri")
+  for h in string.gmatch(tostring(html or ""), "href%s*=%s*[\"']([^\"']*/downloadpdf/[^\"']*)[\"']") do
+    local okU, abs = pcall(function() return tostring(Uri(Uri(pageUrl), HtmlUnescape(h)).AbsoluteUri) end)
+    if okU and abs ~= nil and not IsPreviewPdfUrl(abs) then return abs end
+  end
+  return nil
+end
+
+-- PDF addresses to try for an article page, best first, each with its route name.
+-- Brill: the "Download PDF" button, then the full-text pattern, then a listed
+-- PDF only if it isn't a preview. Elsewhere: the listed PDF, then site rules.
+function PagePdfCandidates(html, pageUrl, doi)
+  local Uri = luanet.import_type("System.Uri")
+  local out, seen = {}, {}
+  local function add(u, route)
+    if u ~= nil and u ~= false and not seen[u] and not IsPreviewPdfUrl(u) then seen[u] = true; table.insert(out, { url = u, route = route }) end
+  end
+  local listed = MetaContent(html, "citation_pdf_url") or PdfLinkTag(html)
+  if listed ~= nil then
+    local okU, abs = pcall(function() return tostring(Uri(Uri(pageUrl), listed).AbsoluteUri) end)
+    listed = okU and abs or nil
+  end
+  local brill = BrillPdfUrls(pageUrl)
+  if brill ~= nil or (listed ~= nil and BrillPdfUrls(listed) ~= nil) then
+    add(BrillButtonLink(html, pageUrl), "pagerule")
+    for _, u in ipairs(brill or {}) do add(u, "pagerule") end
+    if listed ~= nil then
+      if IsPreviewPdfUrl(listed) then for _, u in ipairs(BrillPdfUrls(listed) or {}) do add(u, "page") end
+      else add(listed, "page") end
+    end
+  else
+    add(listed, "page")
+    add(DegruyterPdfUrl(pageUrl, doi), "pagerule")
+  end
+  return out, listed
 end
 
 -- De Gruyter Brill (degruyterbrill.com, formerly degruyter.com): pages and PDFs share one pattern
@@ -874,6 +1045,11 @@ function FetchPdf(tn, doi, oaUrl, skip, title, author, almaText)
              string.gsub(tostring(pageTitle or ""), "[\r\n]+", " ") .. "\n" .. tostring(pageDoi or "") .. "\n" .. route
     end
     local function attempt(url, referer)
+      if IsPreviewPdfUrl(url) then
+        local full = BrillPdfUrl(url)
+        if full == nil then return nil, "only a preview PDF was offered" end
+        url = full
+      end
       attempted = attempted + 1
       local okD, ms, sizeOrWhy, finalUrl = pcall(DownloadPdf, url, cookies, referer)
       if okD and ms ~= nil then return ms, sizeOrWhy, finalUrl end
@@ -914,9 +1090,8 @@ function FetchPdf(tn, doi, oaUrl, skip, title, author, almaText)
           botUrl = botUrl or DegruyterPdfUrl(pageUrl, doi) or BrillPdfUrl(pageUrl) or pageUrl
           return nil, HostOf(pageUrl) .. " only serves its pages to a regular web browser (bot check)"
         end
-        local listed = MetaContent(html, "citation_pdf_url") or PdfLinkTag(html)
-        local rule = BrillPdfUrl(pageUrl) or DegruyterPdfUrl(pageUrl, doi)
-        if listed == nil and rule == nil then
+        local cands = PagePdfCandidates(html, pageUrl, doi)
+        if #cands == 0 then
           -- not an article page yet: an intermediate redirect page, or a proxy login
           local nextUrl = PageRedirect(html)
           if nextUrl == nil then
@@ -931,13 +1106,10 @@ function FetchPdf(tn, doi, oaUrl, skip, title, author, almaText)
           local pageTitle = MetaContent(html, "citation_title") or MetaContent(html, "dc.title") or ""
           local pageDoi = MetaContent(html, "citation_doi") or MetaContent(html, "dc.identifier") or ""
           pageDoi = string.gsub(string.gsub(pageDoi, "^doi:", ""), "^https?://[%w%.]*doi%.org/", "")
-          if listed ~= nil then listed = tostring(Uri(Uri(pageUrl), listed).AbsoluteUri) end
-          for _, pdfUrl in ipairs({ listed or false, (rule ~= listed) and rule or false }) do
-            if pdfUrl then
-              local ms, size, finalUrl = attempt(pdfUrl, pageUrl)
-              if ms ~= nil then return saved(ms, size, finalUrl, label, route, pageTitle, pageDoi) end
-              why = HostOf(pdfUrl) .. ": " .. tostring(size)
-            end
+          for _, c in ipairs(cands) do
+            local ms, size, finalUrl = attempt(c.url, pageUrl)
+            if ms ~= nil then return saved(ms, size, finalUrl, label, route, pageTitle, pageDoi) end
+            why = HostOf(c.url) .. ": " .. tostring(size)
           end
           return nil, why
         end
@@ -986,10 +1158,10 @@ function FetchPdf(tn, doi, oaUrl, skip, title, author, almaText)
     -- 2a. Site rules for where the DOI points (doesn't load the publisher's article page)
     local target = DoiTarget(doi)
     if not skipped.site then
-      local ruleName, rulePdf = nil, nil
-      if BrillPdfUrl(target) ~= nil then ruleName, rulePdf = "Brill", BrillPdfUrl(target)
-      elseif DegruyterPdfUrl(target, doi) ~= nil then ruleName, rulePdf = "De Gruyter Brill", DegruyterPdfUrl(target, doi) end
-      if rulePdf ~= nil then
+      local ruleName, rulePdfs = nil, nil
+      if BrillPdfUrls(target) ~= nil then ruleName, rulePdfs = "Brill", BrillPdfUrls(target)
+      elseif DegruyterPdfUrl(target, doi) ~= nil then ruleName, rulePdfs = "De Gruyter Brill", { DegruyterPdfUrl(target, doi) } end
+      for _, rulePdf in ipairs(rulePdfs or {}) do
         local ms, size, finalUrl = attempt(rulePdf, target)
         if ms ~= nil then return saved(ms, size, finalUrl, " (" .. ruleName .. ")", "site", "", doi) end
         table.insert(reasons, ruleName .. ": " .. tostring(size))
@@ -1022,20 +1194,16 @@ function FetchPdf(tn, doi, oaUrl, skip, title, author, almaText)
         local pageDoi = MetaContent(html, "citation_doi") or MetaContent(html, "dc.identifier") or ""
         pageDoi = string.gsub(pageDoi, "^doi:", "")
         pageDoi = string.gsub(pageDoi, "^https?://[%w%.]*doi%.org/", "")
-        local listed = MetaContent(html, "citation_pdf_url") or PdfLinkTag(html)
-        if listed ~= nil then listed = tostring(Uri(Uri(pageUrl), listed).AbsoluteUri) end
-        local rule = (not blocked) and (BrillPdfUrl(pageUrl) or DegruyterPdfUrl(pageUrl, doi)) or nil
-        if listed ~= nil and not skipped.page then
-          local ms, size, finalUrl = attempt(listed, pageUrl)
-          if ms ~= nil then return saved(ms, size, finalUrl, "", "page", pageTitle, pageDoi) end
-          lastError = "Couldn't download from " .. HostOf(listed) .. ": " .. tostring(size) .. ".\n" .. pageUrl
+        local cands = {}
+        if not blocked then cands = PagePdfCandidates(html, pageUrl, doi) end
+        for _, c in ipairs(cands) do
+          if not skipped[c.route] then
+            local ms, size, finalUrl = attempt(c.url, pageUrl)
+            if ms ~= nil then return saved(ms, size, finalUrl, "", c.route, pageTitle, pageDoi) end
+            lastError = "Couldn't download from " .. HostOf(c.url) .. ": " .. tostring(size) .. ".\n" .. pageUrl
+          end
         end
-        if rule ~= nil and rule ~= listed and not skipped.pagerule then
-          local ms, size, finalUrl = attempt(rule, pageUrl)
-          if ms ~= nil then return saved(ms, size, finalUrl, "", "pagerule", pageTitle, pageDoi) end
-          lastError = "Couldn't download from " .. HostOf(rule) .. ": " .. tostring(size) .. ".\n" .. pageUrl
-        end
-        if listed == nil and rule == nil and lastError == nil and not blocked then
+        if #cands == 0 and lastError == nil and not blocked then
           lastError = HostOf(pageUrl) .. " doesn't list a PDF address on its article page, so it needs a manual download.\n" .. pageUrl
         end
       end
