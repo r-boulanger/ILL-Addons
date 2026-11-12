@@ -33,6 +33,9 @@ local function EbscoSetting(name)
 end
 settings.EbscoProfile     = EbscoSetting("EbscoProfile")
 settings.EbscoPassword    = EbscoSetting("EbscoPassword")
+-- Analytics: the Google Apps Script web-app address and its key (blank or ENTER_... = off)
+settings.AnalyticsUrl     = EbscoSetting("AnalyticsUrl")
+settings.AnalyticsKey     = EbscoSetting("AnalyticsKey")
 
 local interfaceMngr = nil
 local agentForm = { Form = nil, Browser = nil, RibbonPage = nil }
@@ -1242,9 +1245,16 @@ end
 -- download button (or the site sends the file as a download), the addon catches
 -- that one download and puts it in the review folder under the TN, so it gets
 -- the same first-page check and Save as TN.pdf. The addon never clicks
--- anything on the publisher's site; it only opens the address and catches the
--- download staff start. One download per click of the button, for 15 minutes.
-local capture = { armed = false, hooked = false, tn = "", started = 0, op = nil, path = nil, source = "" }
+-- anything on the publisher's site and sends no request of its own: it opens
+-- the address, and keeps the PDF the tab itself receives.
+--   1. As soon as the tab receives the PDF (the viewer opens it), the addon
+--      keeps a copy of that response (WebResourceResponseReceived), so no
+--      click is needed.
+--   2. If that copy isn't available, the next download staff start in the tab
+--      (the viewer's download button) is caught instead (DownloadStarting).
+-- One PDF per click of Open in PDF Preview, for 15 minutes.
+local capture = { armed = false, hooked = false, tn = "", started = 0, op = nil, path = nil, source = "", host = "", task = nil }
+local CapturePath            -- defined below; used by the download catcher too
 
 local function PreviewCore()
   local core = nil
@@ -1275,26 +1285,50 @@ function OnPreviewDownload(args)
   local ok, err = pcall(function()
     if not capture.armed then return end            -- only the download staff start after "Open in PDF Preview"
     capture.armed = false
-    local Directory = luanet.import_type("System.IO.Directory")
-    local Path = luanet.import_type("System.IO.Path")
-    local DateTime = luanet.import_type("System.DateTime")
-    local path
-    if ReviewOn() then
-      Directory.CreateDirectory(ReviewFolder())
-      reviewCounter = reviewCounter + 1
-      local stamp = string.format("%.0f", tonumber(DateTime.UtcNow.Ticks) or 0) .. "-" .. reviewCounter
-      path = tostring(Path.Combine(ReviewFolder(), SafeFileStem(capture.tn) .. "-" .. stamp .. ".pdf"))
-    else
-      path = FinalPdfPath(capture.tn)
-    end
+    capture.task = nil                               -- a download replaces a pending copy
+    local path = CapturePath()
     args.ResultFilePath = path
     pcall(function() args.Handled = true end)       -- no Edge download bubble
     capture.path = path
     capture.op = args.DownloadOperation
-    pcall(function() capture.source = HostOf(tostring(args.DownloadOperation.Uri)) end)
+    pcall(function() local u = args.DownloadOperation.Uri; if u ~= nil then capture.source = HostOf(tostring(u)) end end)
     Log("PDF Preview download caught: " .. path)
   end)
   if not ok then Log("PDF Preview download: " .. ErrorText(err)) end
+end
+
+-- Where a capture is written: the review folder (review on) or <TN>.pdf in PdfSaveFolder
+CapturePath = function()
+  local Directory = luanet.import_type("System.IO.Directory")
+  local Path = luanet.import_type("System.IO.Path")
+  local DateTime = luanet.import_type("System.DateTime")
+  if ReviewOn() then
+    Directory.CreateDirectory(ReviewFolder())
+    reviewCounter = reviewCounter + 1
+    local stamp = string.format("%.0f", tonumber(DateTime.UtcNow.Ticks) or 0) .. "-" .. reviewCounter
+    return tostring(Path.Combine(ReviewFolder(), SafeFileStem(capture.tn) .. "-" .. stamp .. ".pdf"))
+  end
+  return FinalPdfPath(capture.tn)
+end
+
+-- 1. The tab received a response: keep it if it is the PDF (same site as the address opened)
+function OnPreviewResponse(args)
+  pcall(function()
+    if not capture.armed or capture.task ~= nil then return end
+    local uri = tostring(args.Request.Uri)
+    local host = string.lower(HostOf(uri))
+    local want = string.lower(capture.host or "")
+    local base = function(h) return string.match(h, "([%w%-]+%.[%w%-]+)$") or h end
+    if want ~= "" and base(host) ~= base(want) then return end
+    local status = tonumber(args.Response.StatusCode) or 0
+    if status ~= 200 then return end
+    local ctype = ""
+    pcall(function() ctype = string.lower(tostring(args.Response.Headers:GetHeader("Content-Type") or "")) end)
+    if not string.find(ctype, "pdf", 1, true) then return end
+    capture.task = args.Response:GetContentAsync()
+    capture.source = HostOf(uri)
+    Log("PDF Preview: keeping the PDF the tab received from " .. capture.source)
+  end)
 end
 
 local function HookPreviewDownloads()
@@ -1305,6 +1339,9 @@ local function HookPreviewDownloads()
     core.DownloadStarting:Add(function(sender, args) OnPreviewDownload(args) end)
   end)
   if ok then capture.hooked = true else Log("PDF Preview downloads not hooked: " .. ErrorText(err)) end
+  pcall(function()
+    core.WebResourceResponseReceived:Add(function(sender, args) OnPreviewResponse(args) end)
+  end)
   return capture.hooked
 end
 
@@ -1317,7 +1354,7 @@ function OpenInPreview(url, tn)
     if SafeFileStem(tn) == "" then return "ERR\nThis request has no transaction number to name the file." end
     if pdfPreview.browser == nil then return "ERR\nThe PDF Preview tab isn't available on this request (it needs ILLiad's WebView2 browser)." end
     capture.armed = true; capture.tn = tn; capture.started = os.time()
-    capture.op = nil; capture.path = nil; capture.source = HostOf(url)
+    capture.op = nil; capture.path = nil; capture.source = HostOf(url); capture.host = HostOf(url); capture.task = nil
     pdfPreview.browser:Navigate(url)
     HookPreviewDownloads()                          -- may not be ready yet; PreviewCaptureStatus retries
     return "OK"
@@ -1331,6 +1368,34 @@ end
 function PreviewCaptureStatus()
   local ok, result = pcall(function()
     if not HookPreviewDownloads() then return "WAIT\nstarting the PDF Preview tab" end
+    -- 1. the PDF the tab received
+    if capture.task ~= nil and capture.op == nil then
+      local t = capture.task
+      if not t.IsCompleted then return "WAIT\nsaving the PDF the tab opened" end
+      capture.task = nil
+      local stream = nil
+      if not (t.IsFaulted or t.IsCanceled) then pcall(function() stream = t.Result end) end
+      if stream ~= nil then
+        local File = luanet.import_type("System.IO.File")
+        local path = CapturePath()
+        local fs = File.Create(path)
+        local okC, errC = pcall(function() stream:CopyTo(fs) end)
+        pcall(function() fs:Close() end)
+        pcall(function() stream:Close() end)
+        if okC and FileIsPdf(path) then
+          capture.armed = false
+          local size = 0
+          pcall(function() size = tonumber(luanet.import_type("System.IO.FileInfo")(path).Length) or 0 end)
+          if size >= 1000 then
+            return (ReviewOn() and "PENDING" or "OK") .. "\n" .. path .. "\n" .. tostring(size) .. "\n" .. capture.source .. " (PDF Preview tab)\n\n\nbrowser"
+          end
+        end
+        pcall(function() File.Delete(path) end)
+        if not okC then Log("PDF Preview copy failed: " .. ErrorText(errC)) end
+      end
+      -- no usable copy: keep waiting for the viewer's download button instead
+      return "WAIT\nthe PDF is open; click the viewer's download button to save it"
+    end
     if capture.op == nil then
       if not capture.armed then return "ERR\nNothing is waiting for a download. Click Open in PDF Preview again." end
       if os.time() - capture.started > 900 then
@@ -1585,6 +1650,16 @@ function LoadAgent(waitForClick)
     if settings.AutoFetchPdf == nil or SettingIsTrue(settings.AutoFetchPdf) then add("autopdf", "true") else add("autopdf", "false") end
     if ReviewOn() then add("review", "true") else add("review", "false") end
     if EbscoConfigured() then add("eds", "true") end
+    if settings.AnalyticsUrl ~= "" then
+      add("stats", settings.AnalyticsUrl)
+      add("statskey", settings.AnalyticsKey)
+      local pc = ""
+      pcall(function() pc = tostring(luanet.import_type("System.Environment").MachineName) end)
+      add("pc", pc)
+      local ver = ""
+      pcall(function() ver = tostring(AddonInfo.Version or "") end)
+      add("ver", ver)
+    end
     if waitForClick == true then add("auto", "false") else add("auto", "true") end
 
     Step("detect mode")

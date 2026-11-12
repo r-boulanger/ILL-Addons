@@ -38,6 +38,12 @@
 		<Setting name="EbscoPassword" value="ENTER_PASSWORD" type="string">
 			<Description>EBSCOhost API (EIT) password for that profile: replace ENTER_PASSWORD with yours. Stored in ILLiad's addon settings, so anyone who can manage addons can read it.</Description>
 		</Setting>
+		<Setting name="AnalyticsUrl" value="" type="string">
+			<Description>Optional. The Google Apps Script web-app address (https://script.google.com/macros/s/.../exec) of the analytics Google Sheet. When set, each check, PDF fetch, review decision and save is added there as a row (TN, outcome, route, publisher site; no titles, authors, DOIs or patron details). Blank = off.</Description>
+		</Setting>
+		<Setting name="AnalyticsKey" value="" type="string">
+			<Description>The key shown when you ran setup() in the analytics Apps Script. Rows without the right key are ignored, so only this addon can add to the sheet.</Description>
+		</Setting>
 		<Setting name="AutoRun" value="true" type="boolean">
 			<Description>If true, the check runs when the request opens. If false, click Check Citation.</Description>
 		</Setting>

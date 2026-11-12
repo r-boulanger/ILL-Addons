@@ -156,6 +156,37 @@ const cfg = {
   mode:    P.get("mode") || ""             // "borrowing" or "eresource", chosen by StrategyAgent.lua
 };
 
+/* ---------- Analytics (optional) ----------
+   When the AnalyticsUrl setting holds a Google Apps Script web-app address,
+   each check, fetch, review decision and save is sent there as one row of the
+   Google Sheet (see analytics/Code.gs). Rows hold the TN, outcomes, routes and
+   publisher sites only: no titles, authors, DOIs or patron details.
+   Rows that can't be sent (no network) wait in this PC's storage and go with the next one. */
+const STATS = { url: P.get("stats") || "", key: P.get("statskey") || "", pc: P.get("pc") || "", ver: P.get("ver") || "" };
+const STATS_QUEUE = "illcheck-stats-queue";
+function statsOn(){ return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec/.test(STATS.url); }
+function statsSend(rows){
+  if (!statsOn() || !rows.length) return;
+  fetch(STATS.url, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
+                     body: JSON.stringify({ key: STATS.key, rows }) })
+    .catch(() => {
+      try {
+        const q = JSON.parse(localStorage.getItem(STATS_QUEUE) || "[]").concat(rows).slice(-500);
+        localStorage.setItem(STATS_QUEUE, JSON.stringify(q));
+      } catch(e){}
+    });
+}
+function track(event, fields){
+  if (!statsOn()) return;
+  const row = Object.assign({ time: new Date().toISOString(), pc: STATS.pc, version: STATS.ver, event,
+                              tn: String(P.get("f_TransactionNumber") || "").trim(), mode: cfg.mode || "" }, fields || {});
+  let queued = [];
+  try { queued = JSON.parse(localStorage.getItem(STATS_QUEUE) || "[]"); localStorage.removeItem(STATS_QUEUE); } catch(e){}
+  statsSend(queued.concat([row]));
+}
+// "brill.com (Bowdoin: Brill Journals)" -> "brill.com"
+const hostOnly = s => String(s || "").trim().split(/\s+/)[0].replace(/^https?:\/\//, "").split("/")[0];
+
 /* Fallback mode detection, used only when the page is opened outside ILLiad
    (StrategyAgent.lua normally decides). Same rule as the Lua script:
    username "Lending" = eResource, any other username = borrowing. */
@@ -988,6 +1019,7 @@ if (typeof document !== "undefined") (function(){
     res.accessReady = loadAccess(res).catch(() => {}).finally(() => {
       if (!res.almaLinks) res.almaLinks = [];
       refreshFetchCard(res);
+      track("check", checkFields(res, res.almaLinks.length));
     });
     res.accessReady.then(() => { if (firstCheck) maybeAutoFetch(res); });
   }
@@ -1048,6 +1080,8 @@ if (typeof document !== "undefined") (function(){
       btn.disabled = true;
       st.innerHTML = '<div class="progress"><span class="spin"></span>' + (skip ? "Trying a different way to fetch the PDF… " : auto ? "Fetching the PDF automatically (citation confidence: " + esc(res.confidence || "unknown") + ")… " : "Downloading… ") + "ILLiad may pause for a few seconds.</div>";
       let raw;
+      const t0 = Date.now();
+      const how = skip ? "try again" : auto ? "auto" : "manual";
       const wantTitle = [b.title, b.subtitle].filter(Boolean).join(": ") || reqView(request).title || "";
       const wantAuthor = surname(((b.authors || [])[0]) || reqView(request).author || "");
       if (res.accessReady) await res.accessReady;          // Bowdoin's links come from the access check
@@ -1055,6 +1089,7 @@ if (typeof document !== "undefined") (function(){
       try { raw = String(await bridgeCall("FetchPdf", tn, doi, oa, skip, wantTitle, wantAuthor, almaText) || ""); }
       catch(e){ st.innerHTML = '<p class="modetag" style="margin:0">' + esc(e.message.replace("automatic access check", "PDF download")) + "</p>"; btn.disabled = false; return; }
       const lines = raw.split("\n");
+      const secs = Math.round((Date.now() - t0) / 1000);
       if (lines[0] === "OK" || lines[0] === "PENDING"){
         const [kind, path, bytes, source, pageTitle, pageDoi, route] = lines;
         const expected = [b.title, b.subtitle].filter(Boolean).join(": ") || reqView(request).title || "";
@@ -1064,7 +1099,9 @@ if (typeof document !== "undefined") (function(){
         const checks = esc((Number(bytes)/1048576).toFixed(1) + " MB from " + source) +
                 (pageDoi ? " · page DOI " + (doiOk ? "matches" : "DIFFERENT: " + pageDoi) : "") +
                 (pageTitle ? " · page title " + (titleOk >= 0.6 ? "matches" : "looks different: “" + pageTitle + "”") : "");
-        if (kind === "PENDING") return showReview(res, auto, { path, checks, warn, doiBad: doiOk === false, tn, doi, route: route || "", skip });
+        track("fetch", { auto: how, outcome: "fetched", route: route || "", host: hostOnly(source), seconds: secs, confidence: res.confidence || "" });
+        if (kind === "PENDING") return showReview(res, auto, { path, checks, warn, doiBad: doiOk === false, tn, doi, route: route || "", skip, source });
+        track("saved", { route: route || "", host: hostOnly(source), detail: "saved without review" });
         let h = (auto ? '<div class="pct" style="margin-bottom:6px">Fetched automatically (citation confidence: ' + esc(res.confidence || "unknown") + ').</div>' : "") +
                 '<span class="badge ' + (warn ? "Low" : "High") + '">' + (warn ? "Saved, check it" : "Saved") + "</span> " +
                 '<button type="button" data-copy="' + esc(path) + '" title="Copy file path">' + esc(path) + "</button>" +
@@ -1075,6 +1112,8 @@ if (typeof document !== "undefined") (function(){
       } else {
         const msg = lines[1] || "Unknown error", page = lines[2] || (doi ? "https://doi.org/" + doi : "");
         const browserUrl = ((lines.find(l => l.startsWith("BROWSER\t")) || "").split("\t")[1]) || "";
+        track("fetch", { auto: how, outcome: browserUrl ? "needs browser" : "failed", host: hostOnly(browserUrl || page), seconds: secs,
+                         confidence: res.confidence || "", detail: String(msg).slice(0, 160) });
         st.innerHTML = (skip ? '<div class="pct" style="margin-bottom:6px">The previous PDF was discarded and nothing was saved.</div>' : auto ? '<div class="pct" style="margin-bottom:6px">Tried automatically (citation confidence: ' + esc(res.confidence || "unknown") + ').</div>' : "") +
           '<span class="badge ' + (browserUrl ? "Medium" : "None") + '">' + (browserUrl ? "Needs the browser" : "Not fetched") + "</span> " + esc(msg) +
           (browserUrl ? browserFetchHtml(browserUrl, tn) : "") +
@@ -1098,8 +1137,8 @@ if (typeof document !== "undefined") (function(){
       '<span class="pct">Opens the PDF in the PDF Preview tab at the top of the request.</span>' +
       '<ol class="pct" style="margin:8px 0 0 18px;padding:0">' +
         "<li>Click the <strong>PDF Preview</strong> tab. If the site shows a check first, it clears by itself (or follow what it asks).</li>" +
-        "<li>When the PDF appears, click its <strong>download / save</strong> button (↓). If the site downloads it straight away, there's nothing to click.</li>" +
-        "<li>Come back here: the PDF shows up for review as " + esc(tn) + ".pdf.</li></ol>" +
+        "<li>When the PDF opens there, the addon keeps a copy automatically: there's nothing to click. (If the status below asks, click the viewer's download button ↓ instead.)</li>" +
+        "<li>Come back here: the PDF shows up " + (cfg.review ? "for review as " + esc(tn) + ".pdf" : "saved as " + esc(tn) + ".pdf") + ".</li></ol>" +
       '<div id="pdf-browser-status" class="pct" style="margin-top:6px"></div></div>';
   }
   let browserPoll = null;
@@ -1125,13 +1164,16 @@ if (typeof document !== "undefined") (function(){
           return;
         }
         stopBrowserPoll();
+        track("browser", { outcome: (kind === "PENDING" || kind === "OK") ? "captured" : "failed", host: hostOnly(url),
+                           seconds: Math.round((Date.now() - started) / 1000), detail: kind === "ERR" ? rest.join(" ").slice(0, 160) : "" });
         if (kind === "PENDING" || kind === "OK"){
           const [path, bytes, source] = rest;
           const f = { path, checks: esc((Number(bytes)/1048576).toFixed(1) + " MB from " + source), warn: false, doiBad: false,
-                      tn, doi: (res.best && res.best.doi) || findDOI(request) || "", route: "browser", skip };
+                      tn, doi: (res.best && res.best.doi) || findDOI(request) || "", route: "browser", skip, source };
           if (kind === "PENDING") return showReview(res, false, f);
           $("pdf-status").innerHTML = '<span class="badge High">Saved</span> ' + esc(path) + '<div class="pct" style="margin-top:6px">' + f.checks + "</div>";
           summary += "\nPDF saved: " + path;
+          track("saved", { route: "browser", host: hostOnly(source), detail: "saved without review" });
           return;
         }
         b.disabled = false;
@@ -1385,6 +1427,8 @@ if (typeof document !== "undefined") (function(){
         wireCopy(st);
         summary += "\nPDF saved after review: " + v;
         dropReview(f.tn);
+        track("review", { outcome: "saved", route: f.route || "", host: hostOnly(f.source), check: f.fp ? f.fp.verdict : "not read" });
+        track("saved", { route: f.route || "", host: hostOnly(f.source), check: f.fp ? f.fp.verdict : "not read" });
       } else { msg.textContent = "Couldn't save: " + (v || "unknown error"); busy(false); }
     };
     // Try again: discard this PDF, then fetch again skipping the way that produced it
@@ -1394,6 +1438,7 @@ if (typeof document !== "undefined") (function(){
       try { r = String(await bridgeCall("DiscardPdf", f.path) || ""); } catch(e){ r = "ERR\n" + e.message; }
       if (!r.startsWith("OK")){ msg.textContent = "Couldn't discard this PDF: " + r.replace(/^ERR\s*/, ""); busy(false); return; }
       dropReview(f.tn);
+      track("review", { outcome: "try again", route: f.route || "", host: hostOnly(f.source), check: f.fp ? f.fp.verdict : "not read" });
       const skip = [f.skip, f.route].filter(Boolean).join(",");
       await doFetch(res, false, skip || "first");
     };
@@ -1415,7 +1460,7 @@ if (typeof document !== "undefined") (function(){
      fetching a second copy. */
   const REVIEW_KEY = tn => "illcheck-review-" + tn;
   function holdReview(f){
-    try { sessionStorage.setItem(REVIEW_KEY(f.tn), JSON.stringify({ path:f.path, checks:f.checks, warn:f.warn, doiBad:f.doiBad, tn:f.tn, doi:f.doi, route:f.route, skip:f.skip })); } catch(e){}
+    try { sessionStorage.setItem(REVIEW_KEY(f.tn), JSON.stringify({ path:f.path, checks:f.checks, warn:f.warn, doiBad:f.doiBad, tn:f.tn, doi:f.doi, route:f.route, skip:f.skip, source:f.source })); } catch(e){}
   }
   function dropReview(tn){ try { sessionStorage.removeItem(REVIEW_KEY(tn)); } catch(e){} }
   function heldReview(tn){ try { return JSON.parse(sessionStorage.getItem(REVIEW_KEY(tn)) || "null"); } catch(e){ return null; } }
@@ -1574,6 +1619,15 @@ if (typeof document !== "undefined") (function(){
     out.insertAdjacentHTML("beforeend", h);
     wireOthers(res, render);
     sendCitation(res);
+    track("check", checkFields(res, null));
+  }
+  function checkFields(res, almaCount){
+    const b = res.best || {};
+    return { confidence: res.confidence || "None",
+             outcome: (res.confidence === "High" || res.confidence === "Medium") ? "verified" : "unverified",
+             route: b.source || "",
+             detail: ["DOI " + ((b.doi || findDOI(request)) ? "yes" : "no"), "free copy " + (res.oa && res.oa.url ? "yes" : "no"),
+                      almaCount === null ? "" : "Bowdoin links " + almaCount].filter(Boolean).join("; ") };
   }
 
   for (const b of document.querySelectorAll(".modes button")) b.onclick = () => { setMode(b.dataset.mode, false); start(); };
